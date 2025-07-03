@@ -1,5 +1,5 @@
 <?php
-// File: app/Models/Production.php - COMPLETE VERSION
+// File: app/Models/Production.php - COMPLETE UPDATED MODEL
 
 namespace App\Models;
 
@@ -39,13 +39,17 @@ class Production extends Model
      */
     protected $casts = [
         'production_date' => 'date',
-        'raw_materials_used' => 'array', // JSON akan di-cast ke array
+        'raw_materials_used' => 'array',
         'target_quantity' => 'integer',
         'actual_quantity' => 'integer',
         'good_quantity' => 'integer',
         'defect_quantity' => 'integer',
         'downtime_minutes' => 'integer'
     ];
+
+    // ===================================================================
+    // RELATIONSHIPS
+    // ===================================================================
 
     /**
      * Relasi: Production belongsTo ProductType
@@ -80,12 +84,96 @@ class Production extends Model
     }
 
     /**
-     * Relasi: Production memiliki banyak QualityControl
+     * ✅ FIXED: Relasi dengan QualityControl (plural) - UTAMA
      */
     public function qualityControls()
     {
-        return $this->hasMany(QualityControl::class);
+        return $this->hasMany(QualityControl::class, 'production_id');
     }
+
+    /**
+     * ✅ FIXED: Get the latest approved QC relationship
+     */
+    public function approvedQualityControl()
+    {
+        return $this->hasOne(QualityControl::class, 'production_id')
+            ->where('final_status', 'approved')
+            ->latest();
+    }
+
+    // ===================================================================
+    // ✅ ACCESSORS UNTUK COMPATIBILITY
+    // ===================================================================
+
+    /**
+     * ✅ ACCESSOR: Get latest quality control (singular)
+     * Ini memungkinkan $production->qualityControl tetap bisa dipakai
+     */
+    public function getQualityControlAttribute()
+    {
+        return $this->qualityControls()->latest()->first();
+    }
+
+    /**
+     * ✅ ACCESSOR: Get QC status
+     */
+    public function getQcStatusAttribute()
+    {
+        $qc = $this->quality_control;
+        return $qc ? $qc->final_status : 'pending';
+    }
+
+    // ===================================================================
+    // HELPER METHODS
+    // ===================================================================
+
+    /**
+     * ✅ HELPER: Check if has approved QC
+     */
+    public function hasApprovedQC()
+    {
+        return $this->qualityControls()
+            ->where('final_status', 'approved')
+            ->exists();
+    }
+
+    /**
+     * ✅ HELPER: Check if ready for distribution
+     */
+    public function isReadyForDistribution()
+    {
+        return in_array($this->status, ['qc_passed', 'completed']) 
+            && $this->good_quantity > 0 
+            && $this->hasApprovedQC();
+    }
+
+    /**
+     * Helper method: Cek apakah sudah ada QC
+     */
+    public function hasQualityControl()
+    {
+        return $this->qualityControls()->exists();
+    }
+
+    /**
+     * Helper method: Dapatkan status QC
+     */
+    public function getQCStatus()
+    {
+        return $this->qc_status;
+    }
+
+    /**
+     * Helper method: Cek apakah produksi bisa diinspeksi QC
+     */
+    public function canBeInspected()
+    {
+        return $this->status === 'completed' && !$this->hasQualityControl();
+    }
+
+    // ===================================================================
+    // SCOPES
+    // ===================================================================
 
     /**
      * Scope: Filter berdasarkan status
@@ -118,6 +206,22 @@ class Production extends Model
     {
         return $query->where('status', 'completed');
     }
+
+    /**
+     * ✅ NEW SCOPE: Ready for distribution
+     */
+    public function scopeReadyForDistribution($query)
+    {
+        return $query->whereIn('status', ['qc_passed', 'completed'])
+            ->where('good_quantity', '>', 0)
+            ->whereHas('qualityControls', function($q) {
+                $q->where('final_status', 'approved');
+            });
+    }
+
+    // ===================================================================
+    // CALCULATION METHODS
+    // ===================================================================
 
     /**
      * Helper method: Hitung efficiency
@@ -170,22 +274,9 @@ class Production extends Model
         return round($actualMinutes / 60, 2);
     }
 
-    /**
-     * Helper method: Cek apakah sudah ada QC
-     */
-    public function hasQualityControl()
-    {
-        return $this->qualityControls()->exists();
-    }
-
-    /**
-     * Helper method: Dapatkan status QC
-     */
-    public function getQCStatus()
-    {
-        $qc = $this->qualityControls()->latest()->first();
-        return $qc ? $qc->final_status : null;
-    }
+    // ===================================================================
+    // STATIC METHODS
+    // ===================================================================
 
     /**
      * Helper method: Generate batch number otomatis
@@ -207,13 +298,9 @@ class Production extends Model
         return "BATCH{$date}{$newNumber}";
     }
 
-    /**
-     * Helper method: Cek apakah produksi bisa diinspeksi QC
-     */
-    public function canBeInspected()
-    {
-        return $this->status === 'completed' && !$this->hasQualityControl();
-    }
+    // ===================================================================
+    // FORMATTED ACCESSORS
+    // ===================================================================
 
     /**
      * Accessor: Get formatted production date
@@ -236,4 +323,4 @@ class Production extends Model
         
         return $shifts[$this->shift] ?? ucfirst($this->shift);
     }
-} 
+}

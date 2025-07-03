@@ -16,10 +16,21 @@ use App\Models\Machine;
 use App\Models\RawMaterial;
 use App\Models\User;
 use App\Models\StockMovement;
+use App\Services\NotificationService; // ✅ ADDED
 use App\Helpers\ShiftHelper; // ✅ ADDED
 
 class ProductionController extends Controller
 {
+    protected $notificationService; // ✅ ADDED
+
+    /**
+     * Constructor - Inject NotificationService
+     */
+    public function __construct(NotificationService $notificationService) // ✅ ADDED
+    {
+        $this->notificationService = $notificationService;
+    }
+
     /**
      * Display a listing of productions dengan filter dan pagination
      */
@@ -143,8 +154,9 @@ class ProductionController extends Controller
             'good_quantity' => 'nullable|integer|min:0', // ✅ HAPUS lte constraint
             'defect_quantity' => 'nullable|integer|min:0',
             'start_time' => 'required|date_format:H:i',
-            'end_time' => 'nullable|date_format:H:i|after:start_time',
+            'end_time' => 'nullable|date_format:H:i',
             'downtime_minutes' => 'nullable|integer|min:0|max:480',
+            'raw_materials_used' => 'required|json', // ✅ GANTI: wajib dan harus JSON
             'notes' => 'nullable|string|max:1000'
         ]);
 
@@ -153,6 +165,12 @@ class ProductionController extends Controller
         if (!empty($validationErrors)) {
             return back()->withErrors($validationErrors)->withInput();
         }
+
+        // ✅ TAMBAHKAN: Custom validation untuk raw materials
+$rawMaterialsValidation = $this->validateRawMaterials($validated['raw_materials_used']);
+if (!empty($rawMaterialsValidation)) {
+    return back()->withErrors($rawMaterialsValidation)->withInput();
+}
 
         try {
             DB::beginTransaction();
@@ -167,6 +185,11 @@ class ProductionController extends Controller
             $validated['status'] = $this->determineProductionStatus($validated);
             $validated['raw_materials_used'] = json_encode([]);
 
+            // ✅ TAMBAHKAN: Set default raw_materials_used jika kosong
+            if (empty($validated['raw_materials_used'])) {
+                $validated['raw_materials_used'] = []; // Array kosong, bukan string
+            }
+
             // Jika bukan operator yang create, set operator sesuai input
             // Jika operator yang create, paksa pakai operator yang login
             if (auth()->user()->role->name === 'operator') {
@@ -176,9 +199,22 @@ class ProductionController extends Controller
             // Create production record
             $production = Production::create($validated);
 
+            // ✅ TRIGGER NOTIFICATION: Production Created
+            $this->notificationService->createProductionNotification($production, 'created');
+
             // Jika sudah selesai produksi, update stock movements
             if ($production->status === 'completed' && $production->good_quantity > 0) {
                 $this->createStockMovements($production);
+                
+                // ✅ TRIGGER NOTIFICATION: Production Completed
+                $this->notificationService->createProductionNotification($production, 'completed');
+                
+                // ✅ CHECK TARGET ACHIEVEMENT
+                if ($production->actual_quantity > $production->target_quantity) {
+                    $this->notificationService->createProductionNotification($production, 'target_exceeded');
+                } elseif ($production->actual_quantity < $production->target_quantity) {
+                    $this->notificationService->createProductionNotification($production, 'target_missed');
+                }
             }
 
             // Log activity
@@ -191,7 +227,8 @@ class ProductionController extends Controller
             DB::commit();
 
             return redirect()->route('productions.index')
-                ->with('success', "Produksi {$production->batch_number} berhasil dibuat!");
+                ->with('success', "Produksi {$production->batch_number} berhasil dibuat!")
+                ->with('trigger_update', true); // ✅ SIGNAL FOR FRONTEND UPDATE
 
         } catch (\Exception $e) {
             DB::rollback();
@@ -225,8 +262,22 @@ class ProductionController extends Controller
             abort(403, 'Anda tidak memiliki akses ke data produksi ini.');
         }
 
-        // Hitung metrics
-        $metrics = $this->calculateProductionMetrics($production);
+        // Hitung metrics dengan error handling
+        try {
+            $metrics = $this->calculateProductionMetrics($production);
+        } catch (\Exception $e) {
+            Log::warning('Failed to calculate production metrics in show method', [
+                'production_id' => $production->id,
+                'error' => $e->getMessage()
+            ]);
+            // Fallback metrics
+            $metrics = [
+                'efficiency' => 0,
+                'defect_rate' => 0,
+                'utilization' => 0,
+                'duration_hours' => 0
+            ];
+        }
         
         // Related productions (produksi pada hari yang sama)
         $relatedProductions = Production::where('production_date', $production->production_date)
@@ -309,7 +360,7 @@ class ProductionController extends Controller
             'good_quantity' => 'nullable|integer|min:0', // ✅ HAPUS lte:actual_quantity
             'defect_quantity' => 'nullable|integer|min:0',
             'start_time' => 'required|date_format:H:i',
-            'end_time' => 'nullable|date_format:H:i|after:start_time',
+            'end_time' => 'nullable|date_format:H:i',
             'downtime_minutes' => 'nullable|integer|min:0|max:480',
             'raw_materials_used' => 'nullable|json',
             'notes' => 'nullable|string|max:1000'
@@ -345,6 +396,30 @@ class ProductionController extends Controller
             // Update production
             $production->update($validated);
 
+            // ✅ TRIGGER NOTIFICATIONS BASED ON STATUS CHANGES
+            if ($oldStatus !== $validated['status']) {
+                switch ($validated['status']) {
+                    case 'in_progress':
+                        if ($oldStatus === 'planned') {
+                            $this->notificationService->createProductionNotification($production, 'started');
+                        }
+                        break;
+                        
+                    case 'completed':
+                        if ($oldStatus !== 'completed') {
+                            $this->notificationService->createProductionNotification($production, 'completed');
+                            
+                            // Check target achievement
+                            if ($production->actual_quantity > $production->target_quantity) {
+                                $this->notificationService->createProductionNotification($production, 'target_exceeded');
+                            } elseif ($production->actual_quantity < $production->target_quantity) {
+                                $this->notificationService->createProductionNotification($production, 'target_missed');
+                            }
+                        }
+                        break;
+                }
+            }
+
             // Jika status berubah dari in_progress ke completed, create stock movements
             if ($oldStatus !== 'completed' && $production->status === 'completed' && $production->good_quantity > 0) {
                 $this->createStockMovements($production);
@@ -360,7 +435,8 @@ class ProductionController extends Controller
             DB::commit();
 
             return redirect()->route('productions.show', $production)
-                ->with('success', "Produksi {$production->batch_number} berhasil diperbarui!");
+                ->with('success', "Produksi {$production->batch_number} berhasil diperbarui!")
+                ->with('trigger_update', true); // ✅ SIGNAL FOR FRONTEND UPDATE
 
         } catch (\Exception $e) {
             DB::rollback();
@@ -372,6 +448,83 @@ class ProductionController extends Controller
 
             return back()->with('error', 'Gagal memperbarui data produksi. Silakan coba lagi.')
                 ->withInput();
+        }
+    }
+
+    /**
+     * ✅ NEW METHOD: Update production status only
+     */
+    public function updateStatus(Request $request, Production $production)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:planned,in_progress,completed,on_hold',
+            'actual_quantity' => 'nullable|integer|min:0',
+            'good_quantity' => 'nullable|integer|min:0',
+            'defect_quantity' => 'nullable|integer|min:0',
+            'end_time' => 'nullable|date_format:H:i',
+            'notes' => 'nullable|string|max:1000'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $oldStatus = $production->status;
+            
+            // Update production with new status
+            $production->update(array_filter($validated));
+
+            // ✅ TRIGGER STATUS-BASED NOTIFICATIONS
+            if ($oldStatus !== $validated['status']) {
+                switch ($validated['status']) {
+                    case 'in_progress':
+                        if ($oldStatus === 'planned') {
+                            $this->notificationService->createProductionNotification($production, 'started');
+                        }
+                        break;
+                        
+                    case 'completed':
+                        $this->notificationService->createProductionNotification($production, 'completed');
+                        
+                        // Check target achievement
+                        if ($production->actual_quantity > $production->target_quantity) {
+                            $this->notificationService->createProductionNotification($production, 'target_exceeded');
+                        } elseif ($production->actual_quantity < $production->target_quantity) {
+                            $this->notificationService->createProductionNotification($production, 'target_missed');
+                        }
+                        
+                        // Create stock movements if completed
+                        if ($production->good_quantity > 0) {
+                            $this->createStockMovements($production);
+                        }
+                        break;
+                        
+                    case 'on_hold':
+                        // Could trigger quality review notification
+                        $this->notificationService->createProductionNotification($production, 'quality_review');
+                        break;
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true, 
+                'message' => 'Status produksi berhasil diperbarui',
+                'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error('Failed to update production status', [
+                'production_id' => $production->id,
+                'error' => $e->getMessage(),
+                'user' => auth()->user()->name
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memperbarui status produksi'
+            ], 500);
         }
     }
 
@@ -459,7 +612,22 @@ class ProductionController extends Controller
         if ($production->status === 'completed') {
             $completedTime = $production->updated_at;
             if ($production->end_time) {
-                $completedTime = Carbon::parse($production->production_date . ' ' . $production->end_time);
+                try {
+                    // ✅ SAFE: Extract date dan time terpisah
+                    $dateOnly = $production->production_date instanceof Carbon 
+                        ? $production->production_date->format('Y-m-d')
+                        : Carbon::parse($production->production_date)->format('Y-m-d');
+                    
+                    $endTime = $this->extractTimeOnly($production->end_time);
+                    $completedTime = Carbon::createFromFormat('Y-m-d H:i', $dateOnly . ' ' . $endTime);
+                } catch (\Exception $e) {
+                    Log::warning('Failed to parse completion time in history', [
+                        'production_id' => $production->id,
+                        'end_time' => $production->end_time,
+                        'error' => $e->getMessage()
+                    ]);
+                    $completedTime = $production->updated_at;
+                }
             }
 
             $timeline->push([
@@ -491,123 +659,176 @@ class ProductionController extends Controller
     }
 
     /**
-     * Handle history 'all' - buat dummy production untuk view
+     * Handle history 'all' - buat dummy production untuk view - FIXED
      */
     private function historyAll()
     {
-        // Ambil production terbaru sebagai contoh untuk ditampilkan
-        $latestProduction = Production::with([
-            'productType',
-            'productionLine',
-            'machine', 
-            'operator',
-            'qualityControls.inspector'
-        ])->latest('production_date')->first();
+        try {
+            // Ambil production terbaru sebagai contoh untuk ditampilkan
+            $latestProduction = Production::with([
+                'productType',
+                'productionLine',
+                'machine', 
+                'operator',
+                'qualityControls.inspector'
+            ])->latest('production_date')->first();
 
-        // Jika tidak ada production, buat object dummy
-        if (!$latestProduction) {
-            // Buat object dummy dengan data minimal
-            $production = new \stdClass();
-            $production->batch_number = 'CONTOH-001';
-            $production->target_quantity = 1000;
-            $production->actual_quantity = 950;
-            $production->good_quantity = 900;
-            $production->defect_quantity = 50;
-            $production->downtime_minutes = 30;
-            $production->status = 'completed';
-            $production->production_date = Carbon::now();
-            
-            // Buat object dummy untuk relasi
-            $production->productType = new \stdClass();
-            $production->productType->name = 'Sample Product';
-            
-            $production->operator = new \stdClass();
-            $production->operator->name = 'Sample Operator';
-            
-            $production->productionLine = new \stdClass();
-            $production->productionLine->name = 'Sample Line';
-            
-            $production->machine = new \stdClass();
-            $production->machine->name = 'Sample Machine';
-            
-            $production->qualityControls = collect();
-            
-            // Timeline untuk dummy
-            $timeline = collect([
-                [
+            // Jika tidak ada production, buat object dummy
+            if (!$latestProduction) {
+                // Buat object dummy dengan data minimal
+                $production = new \stdClass();
+                $production->batch_number = 'CONTOH-001';
+                $production->target_quantity = 1000;
+                $production->actual_quantity = 950;
+                $production->good_quantity = 900;
+                $production->defect_quantity = 50;
+                $production->downtime_minutes = 30;
+                $production->status = 'completed';
+                $production->production_date = Carbon::now();
+                
+                // Buat object dummy untuk relasi
+                $production->productType = new \stdClass();
+                $production->productType->name = 'Sample Product';
+                
+                $production->operator = new \stdClass();
+                $production->operator->name = 'Sample Operator';
+                
+                $production->productionLine = new \stdClass();
+                $production->productionLine->name = 'Sample Line';
+                
+                $production->machine = new \stdClass();
+                $production->machine->name = 'Sample Machine';
+                
+                $production->qualityControls = collect();
+                
+                // Timeline untuk dummy
+                $timeline = collect([
+                    [
+                        'type' => 'production_created',
+                        'timestamp' => Carbon::now()->subHours(8),
+                        'title' => 'Produksi Dibuat',
+                        'description' => "Batch {$production->batch_number} dibuat oleh {$production->operator->name}",
+                        'icon' => 'plus-circle',
+                        'color' => 'primary'
+                    ],
+                    [
+                        'type' => 'production_completed',
+                        'timestamp' => Carbon::now(),
+                        'title' => 'Produksi Selesai',
+                        'description' => "Target: {$production->target_quantity}, Aktual: {$production->actual_quantity}, Good: {$production->good_quantity}",
+                        'icon' => 'check-circle',
+                        'color' => 'success'
+                    ]
+                ]);
+            } else {
+                // Gunakan production terbaru
+                $production = $latestProduction;
+                
+                // Buat timeline untuk production terbaru dengan error handling
+                $timeline = collect();
+
+                $timeline->push([
                     'type' => 'production_created',
-                    'timestamp' => Carbon::now()->subHours(8),
+                    'timestamp' => $production->created_at,
                     'title' => 'Produksi Dibuat',
                     'description' => "Batch {$production->batch_number} dibuat oleh {$production->operator->name}",
                     'icon' => 'plus-circle',
                     'color' => 'primary'
-                ],
-                [
-                    'type' => 'production_completed',
-                    'timestamp' => Carbon::now(),
-                    'title' => 'Produksi Selesai',
-                    'description' => "Target: {$production->target_quantity}, Aktual: {$production->actual_quantity}, Good: {$production->good_quantity}",
-                    'icon' => 'check-circle',
-                    'color' => 'success'
-                ]
-            ]);
-        } else {
-            // Gunakan production terbaru
-            $production = $latestProduction;
-            
-            // Buat timeline untuk production terbaru
-            $timeline = collect();
+                ]);
 
-            $timeline->push([
-                'type' => 'production_created',
-                'timestamp' => $production->created_at,
-                'title' => 'Produksi Dibuat',
-                'description' => "Batch {$production->batch_number} dibuat oleh {$production->operator->name}",
-                'icon' => 'plus-circle',
-                'color' => 'primary'
-            ]);
+                if ($production->status === 'completed') {
+                    $completedTime = $production->updated_at;
+                    if ($production->end_time) {
+                        try {
+                            // ✅ SAFE: Extract date dan time terpisah
+                            $dateOnly = $production->production_date instanceof Carbon 
+                                ? $production->production_date->format('Y-m-d')
+                                : Carbon::parse($production->production_date)->format('Y-m-d');
+                            
+                            $endTime = $this->extractTimeOnly($production->end_time);
+                            $completedTime = Carbon::createFromFormat('Y-m-d H:i', $dateOnly . ' ' . $endTime);
+                        } catch (\Exception $e) {
+                            Log::warning('Failed to parse completion time in historyAll', [
+                                'production_id' => $production->id,
+                                'end_time' => $production->end_time,
+                                'error' => $e->getMessage()
+                            ]);
+                            $completedTime = $production->updated_at;
+                        }
+                    }
 
-            if ($production->status === 'completed') {
-                $completedTime = $production->updated_at;
-                if ($production->end_time) {
-                    $completedTime = Carbon::parse($production->production_date . ' ' . $production->end_time);
+                    $timeline->push([
+                        'type' => 'production_completed',
+                        'timestamp' => $completedTime,
+                        'title' => 'Produksi Selesai',
+                        'description' => "Target: {$production->target_quantity}, Aktual: {$production->actual_quantity}, Good: {$production->good_quantity}",
+                        'icon' => 'check-circle',
+                        'color' => 'success'
+                    ]);
                 }
 
-                $timeline->push([
-                    'type' => 'production_completed',
-                    'timestamp' => $completedTime,
-                    'title' => 'Produksi Selesai',
-                    'description' => "Target: {$production->target_quantity}, Aktual: {$production->actual_quantity}, Good: {$production->good_quantity}",
-                    'icon' => 'check-circle',
-                    'color' => 'success'
-                ]);
+                // Quality control events
+                foreach ($production->qualityControls as $qc) {
+                    $timeline->push([
+                        'type' => 'quality_control',
+                        'timestamp' => $qc->inspection_date,
+                        'title' => 'Quality Control',
+                        'description' => "Inspeksi oleh {$qc->inspector->name} - Status: {$qc->final_status}",
+                        'icon' => 'microscope',
+                        'color' => $qc->final_status === 'approved' ? 'success' : 'warning'
+                    ]);
+                }
             }
 
-            // Quality control events
-            foreach ($production->qualityControls as $qc) {
-                $timeline->push([
-                    'type' => 'quality_control',
-                    'timestamp' => $qc->inspection_date,
-                    'title' => 'Quality Control',
-                    'description' => "Inspeksi oleh {$qc->inspector->name} - Status: {$qc->final_status}",
-                    'icon' => 'microscope',
-                    'color' => $qc->final_status === 'approved' ? 'success' : 'warning'
-                ]);
+            // Sort timeline by timestamp
+            $timeline = $timeline->sortBy('timestamp');
+
+            // Update header untuk menunjukkan ini adalah overview
+            if (is_object($production) && !is_a($production, 'App\Models\Production')) {
+                // Dummy object
+                $production = (object) $production;
             }
+
+            return view('productions.history', compact('production', 'timeline'))
+                ->with('isOverview', true)
+                ->with('success', 'Menampilkan overview riwayat produksi. Untuk melihat detail history produksi tertentu, klik "Detail" pada batch di halaman Data Produksi.');
+
+        } catch (\Exception $e) {
+            Log::error('Failed to load production history', [
+                'error' => $e->getMessage(),
+                'stack_trace' => $e->getTraceAsString()
+            ]);
+
+            // Fallback dengan dummy data
+            $production = new \stdClass();
+            $production->batch_number = 'ERROR-FALLBACK';
+            $production->target_quantity = 0;
+            $production->actual_quantity = 0;
+            $production->good_quantity = 0;
+            $production->defect_quantity = 0;
+            $production->status = 'error';
+            
+            $production->productType = new \stdClass();
+            $production->productType->name = 'Error Loading Data';
+            
+            $production->operator = new \stdClass();
+            $production->operator->name = 'System';
+            
+            $timeline = collect([
+                [
+                    'type' => 'error',
+                    'timestamp' => Carbon::now(),
+                    'title' => 'Error Loading Data',
+                    'description' => 'Terjadi kesalahan saat memuat data history produksi',
+                    'icon' => 'alert-circle',
+                    'color' => 'danger'
+                ]
+            ]);
+
+            return view('productions.history', compact('production', 'timeline'))
+                ->with('isOverview', true)
+                ->with('error', 'Terjadi kesalahan saat memuat data history. Silakan coba lagi atau hubungi administrator.');
         }
-
-        // Sort timeline by timestamp
-        $timeline = $timeline->sortBy('timestamp');
-
-        // Update header untuk menunjukkan ini adalah overview
-        if (is_object($production) && !is_a($production, 'App\Models\Production')) {
-            // Dummy object
-            $production = (object) $production;
-        }
-
-        return view('productions.history', compact('production', 'timeline'))
-            ->with('isOverview', true)
-            ->with('success', 'Menampilkan overview riwayat produksi. Untuk melihat detail history produksi tertentu, klik "Detail" pada batch di halaman Data Produksi.');
     }
 
     /**
@@ -631,7 +852,8 @@ class ProductionController extends Controller
                 'success' => true,
                 'data' => $data,
                 'period' => $period,
-                'generated_at' => now()
+                'generated_at' => now(),
+                'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
             ]);
 
         } catch (\Exception $e) {
@@ -693,7 +915,8 @@ class ProductionController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => $data,
-                'timestamp' => now()
+                'timestamp' => now(),
+                'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
             ]);
 
         } catch (\Exception $e) {
@@ -730,7 +953,35 @@ class ProductionController extends Controller
         return "BTH{$date}{$newSequence}"; // BTH241220001
     }
 
-    // ✅ REMOVED OLD getCurrentShift() method - now using ShiftHelper
+
+    /**
+ * Extract time portion only dari mixed format
+ */
+private function extractTimeOnly($timeValue)
+{
+    if (empty($timeValue)) {
+        return '00:00';
+    }
+
+    // Jika sudah dalam format H:i saja (misal: "14:30")
+    if (preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $timeValue)) {
+        // Ambil hanya jam:menit
+        $parts = explode(':', $timeValue);
+        return sprintf('%02d:%02d', $parts[0], $parts[1]);
+    }
+
+    // Jika dalam format datetime lengkap
+    try {
+        $carbonTime = \Carbon\Carbon::parse($timeValue);
+        return $carbonTime->format('H:i');
+    } catch (\Exception $e) {
+        \Log::warning('Failed to extract time from value', [
+            'time_value' => $timeValue,
+            'error' => $e->getMessage()
+        ]);
+        return '00:00';
+    }
+}
 
     /**
      * Validate business rules
@@ -827,317 +1078,439 @@ class ProductionController extends Controller
      * Get production statistics untuk header
      */
     private function getProductionStats($request)
-{
-   $query = Production::query();
-   
-   // Apply same filters as index
-   if ($request->filled('production_line_id')) {
-       $query->where('production_line_id', $request->production_line_id);
-   }
-   if ($request->filled('date_from')) {
-       $query->whereDate('production_date', '>=', $request->date_from);
-   }
-   if ($request->filled('date_to')) {
-       $query->whereDate('production_date', '<=', $request->date_to);
-   }
-
-   $baseQuery = clone $query;
-   
-   return [
-       'total_productions' => $baseQuery->count(),
-       'completed_productions' => (clone $query)->where('status', 'completed')->count(),
-       'in_progress_productions' => (clone $query)->where('status', 'in_progress')->count(),
-       'total_quantity' => (clone $query)->where('status', 'completed')->sum('actual_quantity'),
-       'total_target' => (clone $query)->sum('target_quantity'),
-       'avg_efficiency' => $this->calculateAverageEfficiency($query)
-   ];
-}
-
-/**
-* Calculate average efficiency
-*/
-private function calculateAverageEfficiency($query)
-{
-   $productions = $query->where('status', 'completed')
-       ->selectRaw('SUM(target_quantity) as total_target, SUM(actual_quantity) as total_actual')
-       ->first();
-
-   if ($productions->total_target > 0) {
-       return round(($productions->total_actual / $productions->total_target) * 100, 2);
-   }
-
-   return 0;
-}
-
-/**
-* Calculate today's efficiency
-*/
-private function calculateTodayEfficiency()
-{
-   $today = Carbon::today();
-   $productions = Production::whereDate('production_date', $today)
-       ->where('status', 'completed')
-       ->selectRaw('SUM(target_quantity) as total_target, SUM(actual_quantity) as total_actual')
-       ->first();
-
-   if ($productions->total_target > 0) {
-       return round(($productions->total_actual / $productions->total_target) * 100, 2);
-   }
-
-   // Fallback untuk data kosong
-   return 87.5;
-}
-
-/**
-* Calculate production metrics untuk show page
-*/
-private function calculateProductionMetrics(Production $production)
-{
-   $metrics = [
-       'efficiency' => 0,
-       'defect_rate' => 0,
-       'utilization' => 0,
-       'duration_hours' => 0
-   ];
-
-   // Efficiency calculation
-   if ($production->target_quantity > 0) {
-       $metrics['efficiency'] = round(($production->actual_quantity / $production->target_quantity) * 100, 2);
-   }
-
-   // Defect rate calculation
-   if ($production->actual_quantity > 0) {
-       $metrics['defect_rate'] = round(($production->defect_quantity / $production->actual_quantity) * 100, 2);
-   }
-
-   // Duration calculation - Quick Fix
-   if ($production->start_time && $production->end_time) {
-       try {
-           // ✅ MENGGUNAKAN format() untuk menghindari datetime conflict
-           $dateOnly = $production->production_date->format('Y-m-d');
-           $start = Carbon::parse($dateOnly . ' ' . $production->start_time);
-           $end = Carbon::parse($dateOnly . ' ' . $production->end_time);
-           
-           $metrics['duration_hours'] = round($end->diffInMinutes($start) / 60, 2);
-
-           // Utilization calculation
-           $totalMinutes = $end->diffInMinutes($start);
-           $workingMinutes = $totalMinutes - $production->downtime_minutes;
-           
-           if ($totalMinutes > 0) {
-               $metrics['utilization'] = round(($workingMinutes / $totalMinutes) * 100, 2);
-           }
-       } catch (\Exception $e) {
-           // Fallback values
-           $metrics['duration_hours'] = 0;
-           $metrics['utilization'] = 0;
+    {
+       $query = Production::query();
+       
+       // Apply same filters as index
+       if ($request->filled('production_line_id')) {
+           $query->where('production_line_id', $request->production_line_id);
        }
-   }
-
-   return $metrics;
-}
-
-/**
-* Get production trend data untuk charts
-*/
-private function getProductionTrendData($period)
-{
-   $days = match($period) {
-       '7d' => 7,
-       '30d' => 30,
-       '3m' => 90,
-       default => 7
-   };
-
-   $data = [];
-   for ($i = $days - 1; $i >= 0; $i--) {
-       $date = Carbon::today()->subDays($i);
-       
-       $production = Production::whereDate('production_date', $date)
-           ->where('status', 'completed')
-           ->selectRaw('
-               SUM(target_quantity) as target,
-               SUM(actual_quantity) as actual,
-               SUM(good_quantity) as good,
-               COUNT(*) as batches
-           ')
-           ->first();
-       
-       // Fallback untuk data kosong
-       $target = $production->target ?? 0;
-       $actual = $production->actual ?? 0;
-       $good = $production->good ?? 0;
-       $batches = $production->batches ?? 0;
-       
-       // Jika tidak ada data, gunakan sample realistis
-       if ($target == 0 && $period === '7d' && $i >= 4) { // Last 3 days sample data
-           $target = rand(1000, 1500);
-           $actual = rand(800, $target);
-           $good = rand((int)($actual * 0.9), $actual);
-           $batches = rand(8, 15);
+       if ($request->filled('date_from')) {
+           $query->whereDate('production_date', '>=', $request->date_from);
        }
+       if ($request->filled('date_to')) {
+           $query->whereDate('production_date', '<=', $request->date_to);
+       }
+
+       $baseQuery = clone $query;
        
-       $data[] = [
-           'date' => $date->format('Y-m-d'),
-           'day' => $date->format('D'),
-           'target' => $target,
-           'actual' => $actual,
-           'good' => $good,
-           'defect' => $actual - $good,
-           'batches' => $batches,
-           'efficiency' => $target > 0 ? round(($actual / $target) * 100, 2) : 0
+       return [
+           'total_productions' => $baseQuery->count(),
+           'completed_productions' => (clone $query)->where('status', 'completed')->count(),
+           'in_progress_productions' => (clone $query)->where('status', 'in_progress')->count(),
+           'total_quantity' => (clone $query)->where('status', 'completed')->sum('actual_quantity'),
+           'total_target' => (clone $query)->sum('target_quantity'),
+           'avg_efficiency' => $this->calculateAverageEfficiency($query)
        ];
-   }
+    }
 
-   return $data;
+    /**
+     * Calculate average efficiency
+     */
+    private function calculateAverageEfficiency($query)
+    {
+       $productions = $query->where('status', 'completed')
+           ->selectRaw('SUM(target_quantity) as total_target, SUM(actual_quantity) as total_actual')
+           ->first();
+
+       if ($productions->total_target > 0) {
+           return round(($productions->total_actual / $productions->total_target) * 100, 2);
+       }
+
+       return 0;
+    }
+
+    /**
+     * Calculate today's efficiency
+     */
+    private function calculateTodayEfficiency()
+    {
+       $today = Carbon::today();
+       $productions = Production::whereDate('production_date', $today)
+           ->where('status', 'completed')
+           ->selectRaw('SUM(target_quantity) as total_target, SUM(actual_quantity) as total_actual')
+           ->first();
+
+       if ($productions->total_target > 0) {
+           return round(($productions->total_actual / $productions->total_target) * 100, 2);
+       }
+
+       // Fallback untuk data kosong
+       return 87.5;
+    }
+
+    /**
+     * Calculate production metrics untuk show page - FIXED untuk menghindari double time specification
+     */
+    
+     private function calculateProductionMetrics(Production $production)
+{
+    $metrics = [
+        'efficiency' => 0,
+        'defect_rate' => 0,
+        'utilization' => 0,
+        'duration_hours' => 0
+    ];
+
+    // Efficiency calculation
+    if ($production->target_quantity > 0) {
+        $metrics['efficiency'] = round(($production->actual_quantity / $production->target_quantity) * 100, 2);
+    }
+
+    // Defect rate calculation
+    if ($production->actual_quantity > 0) {
+        $metrics['defect_rate'] = round(($production->defect_quantity / $production->actual_quantity) * 100, 2);
+    }
+
+    // ✅ DURATION CALCULATION - FIXED
+    if ($production->start_time && $production->end_time) {
+        try {
+            // Ambil tanggal produksi
+            $productionDate = $production->production_date instanceof \Carbon\Carbon 
+                ? $production->production_date->format('Y-m-d')
+                : \Carbon\Carbon::parse($production->production_date)->format('Y-m-d');
+
+            // Ekstrak waktu saja
+            $startTimeStr = $this->extractTimeOnly($production->start_time);
+            $endTimeStr = $this->extractTimeOnly($production->end_time);
+
+            // Buat Carbon objects
+            $startDateTime = \Carbon\Carbon::createFromFormat('Y-m-d H:i', $productionDate . ' ' . $startTimeStr);
+            $endDateTime = \Carbon\Carbon::createFromFormat('Y-m-d H:i', $productionDate . ' ' . $endTimeStr);
+            
+            // ✅ HANDLE CROSS-DAY UNTUK SHIFT MALAM
+            if ($production->shift === 'malam') {
+                $startHour = (int) explode(':', $startTimeStr)[0];
+                $endHour = (int) explode(':', $endTimeStr)[0];
+                
+                // Jika mulai >= 22:00 dan selesai <= 10:00, maka cross-day
+                if ($startHour >= 22 && $endHour <= 10) {
+                    $endDateTime->addDay(); // End time di hari berikutnya
+                }
+            }
+            
+            // Hitung durasi
+            $diffInMinutes = $startDateTime->diffInMinutes($endDateTime);
+            $metrics['duration_hours'] = round($diffInMinutes / 60, 2);
+
+            // Utilization calculation
+            $workingMinutes = $diffInMinutes - ($production->downtime_minutes ?? 0);
+            if ($diffInMinutes > 0) {
+                $metrics['utilization'] = round(($workingMinutes / $diffInMinutes) * 100, 2);
+            }
+            
+        } catch (\Exception $e) {
+            \Log::warning('Failed to calculate production duration', [
+                'production_id' => $production->id,
+                'start_time' => $production->start_time,
+                'end_time' => $production->end_time,
+                'production_date' => $production->production_date,
+                'shift' => $production->shift,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Fallback: gunakan 8 jam sebagai default
+            $metrics['duration_hours'] = 8.0;
+            $metrics['utilization'] = 75; // Default utilization
+        }
+    }
+
+    return $metrics;
 }
 
-/**
-* Get efficiency by line data untuk charts
-*/
-private function getEfficiencyByLineData($period)
-{
-   $days = match($period) {
-       '7d' => 7,
-       '30d' => 30,
-       '3m' => 90,
-       default => 7
-   };
+    /**
+     * Get production trend data untuk charts
+     */
+    private function getProductionTrendData($period)
+    {
+       $days = match($period) {
+           '7d' => 7,
+           '30d' => 30,
+           '3m' => 90,
+           default => 7
+       };
 
-   $startDate = Carbon::today()->subDays($days - 1);
-   
-   $data = ProductionLine::where('status', 'active')
-       ->with(['productions' => function($query) use ($startDate) {
-           $query->where('production_date', '>=', $startDate)
-                 ->where('status', 'completed');
-       }])
-       ->get()
-       ->map(function($line) {
-           $productions = $line->productions;
+       $data = [];
+       for ($i = $days - 1; $i >= 0; $i--) {
+           $date = Carbon::today()->subDays($i);
            
-           $totalTarget = $productions->sum('target_quantity');
-           $totalActual = $productions->sum('actual_quantity');
-           
-           $efficiency = $totalTarget > 0 ? round(($totalActual / $totalTarget) * 100, 2) : 0;
+           $production = Production::whereDate('production_date', $date)
+               ->where('status', 'completed')
+               ->selectRaw('
+                   SUM(target_quantity) as target,
+                   SUM(actual_quantity) as actual,
+                   SUM(good_quantity) as good,
+                   COUNT(*) as batches
+               ')
+               ->first();
            
            // Fallback untuk data kosong
-           if ($efficiency == 0) {
-               $efficiency = rand(75, 95); // Random realistic efficiency
+           $target = $production->target ?? 0;
+           $actual = $production->actual ?? 0;
+           $good = $production->good ?? 0;
+           $batches = $production->batches ?? 0;
+           
+           // Jika tidak ada data, gunakan sample realistis
+           if ($target == 0 && $period === '7d' && $i >= 4) { // Last 3 days sample data
+               $target = rand(1000, 1500);
+               $actual = rand(800, $target);
+               $good = rand((int)($actual * 0.9), $actual);
+               $batches = rand(8, 15);
            }
            
-           return [
-               'line_id' => $line->id,
-               'line_name' => $line->name,
-               'line_code' => $line->code,
-               'efficiency' => $efficiency,
-               'total_production' => $totalActual,
-               'total_batches' => $productions->count(),
-               'capacity_per_hour' => $line->capacity_per_hour
+           $data[] = [
+               'date' => $date->format('Y-m-d'),
+               'day' => $date->format('D'),
+               'target' => $target,
+               'actual' => $actual,
+               'good' => $good,
+               'defect' => $actual - $good,
+               'batches' => $batches,
+               'efficiency' => $target > 0 ? round(($actual / $target) * 100, 2) : 0
            ];
-       });
-
-   return $data;
-}
-
-/**
-* Get operator performance data untuk charts
-*/
-private function getOperatorPerformanceData($period)
-{
-   $days = match($period) {
-       '7d' => 7,
-       '30d' => 30,
-       '3m' => 90,
-       default => 7
-   };
-
-   $startDate = Carbon::today()->subDays($days - 1);
-   
-   $data = User::whereHas('role', function($q) {
-           $q->where('name', 'operator');
-       })
-       ->where('status', 'active')
-       ->with(['productions' => function($query) use ($startDate) {
-           $query->where('production_date', '>=', $startDate)
-                 ->where('status', 'completed');
-       }])
-       ->get()
-       ->map(function($operator) {
-           $productions = $operator->productions;
-           
-           $totalTarget = $productions->sum('target_quantity');
-           $totalActual = $productions->sum('actual_quantity');
-           $totalGood = $productions->sum('good_quantity');
-           
-           $efficiency = $totalTarget > 0 ? round(($totalActual / $totalTarget) * 100, 2) : 0;
-           $qualityRate = $totalActual > 0 ? round(($totalGood / $totalActual) * 100, 2) : 0;
-           
-           return [
-               'operator_id' => $operator->id,
-               'operator_name' => $operator->name,
-               'employee_id' => $operator->employee_id,
-               'efficiency' => $efficiency,
-               'quality_rate' => $qualityRate,
-               'total_production' => $totalActual,
-               'total_batches' => $productions->count(),
-               'avg_batch_size' => $productions->count() > 0 ? round($totalActual / $productions->count()) : 0
-           ];
-       })
-       ->filter(function($item) {
-           return $item['total_batches'] > 0; // Only operators with production
-       })
-       ->sortByDesc('efficiency')
-       ->take(10);
-
-   return $data->values();
-}
-
-/**
-* Get defect trend data untuk charts
-*/
-private function getDefectTrendData($period)
-{
-   $days = match($period) {
-       '7d' => 7,
-       '30d' => 30,
-       '3m' => 90,
-       default => 7
-   };
-
-   $data = [];
-   for ($i = $days - 1; $i >= 0; $i--) {
-       $date = Carbon::today()->subDays($i);
-       
-       $production = Production::whereDate('production_date', $date)
-           ->where('status', 'completed')
-           ->selectRaw('
-               SUM(actual_quantity) as total_actual,
-               SUM(defect_quantity) as total_defects
-           ')
-           ->first();
-       
-       $totalActual = $production->total_actual ?? 0;
-       $totalDefects = $production->total_defects ?? 0;
-       
-       $defectRate = $totalActual > 0 ? round(($totalDefects / $totalActual) * 100, 2) : 0;
-       
-       // Fallback untuk data kosong
-       if ($totalActual == 0 && $period === '7d' && $i >= 4) { // Sample for last 3 days
-           $totalActual = rand(800, 1200);
-           $totalDefects = rand(10, 50);
-           $defectRate = round(($totalDefects / $totalActual) * 100, 2);
        }
-       
-       $data[] = [
-           'date' => $date->format('Y-m-d'),
-           'day' => $date->format('D'),
-           'total_actual' => $totalActual,
-           'total_defects' => $totalDefects,
-           'defect_rate' => $defectRate,
-           'good_quantity' => $totalActual - $totalDefects
-       ];
-   }
 
-   return $data;
+       return $data;
+    }
+
+    /**
+     * Get efficiency by line data untuk charts
+     */
+    private function getEfficiencyByLineData($period)
+    {
+       $days = match($period) {
+           '7d' => 7,
+           '30d' => 30,
+           '3m' => 90,
+           default => 7
+       };
+
+       $startDate = Carbon::today()->subDays($days - 1);
+       
+       $data = ProductionLine::where('status', 'active')
+           ->with(['productions' => function($query) use ($startDate) {
+               $query->where('production_date', '>=', $startDate)
+                     ->where('status', 'completed');
+           }])
+           ->get()
+           ->map(function($line) {
+               $productions = $line->productions;
+               
+               $totalTarget = $productions->sum('target_quantity');
+               $totalActual = $productions->sum('actual_quantity');
+               
+               $efficiency = $totalTarget > 0 ? round(($totalActual / $totalTarget) * 100, 2) : 0;
+               
+               // Fallback untuk data kosong
+               if ($efficiency == 0) {
+                   $efficiency = rand(75, 95); // Random realistic efficiency
+               }
+               
+               return [
+                   'line_id' => $line->id,
+                   'line_name' => $line->name,
+                   'line_code' => $line->code,
+                   'efficiency' => $efficiency,
+                   'total_production' => $totalActual,
+                   'total_batches' => $productions->count(),
+                   'capacity_per_hour' => $line->capacity_per_hour
+               ];
+           });
+
+       return $data;
+    }
+
+    /**
+     * Get operator performance data untuk charts
+     */
+    private function getOperatorPerformanceData($period)
+    {
+       $days = match($period) {
+           '7d' => 7,
+           '30d' => 30,
+           '3m' => 90,
+           default => 7
+       };
+
+       $startDate = Carbon::today()->subDays($days - 1);
+       
+       $data = User::whereHas('role', function($q) {
+               $q->where('name', 'operator');
+           })
+           ->where('status', 'active')
+           ->with(['productions' => function($query) use ($startDate) {
+               $query->where('production_date', '>=', $startDate)
+                     ->where('status', 'completed');
+           }])
+           ->get()
+           ->map(function($operator) {
+               $productions = $operator->productions;
+               
+               $totalTarget = $productions->sum('target_quantity');
+               $totalActual = $productions->sum('actual_quantity');
+               $totalGood = $productions->sum('good_quantity');
+               
+               $efficiency = $totalTarget > 0 ? round(($totalActual / $totalTarget) * 100, 2) : 0;
+               $qualityRate = $totalActual > 0 ? round(($totalGood / $totalActual) * 100, 2) : 0;
+               
+               return [
+                   'operator_id' => $operator->id,
+                   'operator_name' => $operator->name,
+                   'employee_id' => $operator->employee_id,
+                   'efficiency' => $efficiency,
+                   'quality_rate' => $qualityRate,
+                   'total_production' => $totalActual,
+                   'total_batches' => $productions->count(),
+                   'avg_batch_size' => $productions->count() > 0 ? round($totalActual / $productions->count()) : 0
+               ];
+           })
+           ->filter(function($item) {
+               return $item['total_batches'] > 0; // Only operators with production
+           })
+           ->sortByDesc('efficiency')
+           ->take(10);
+
+       return $data->values();
+    }
+
+    /**
+     * Get defect trend data untuk charts
+     */
+    private function getDefectTrendData($period)
+    {
+       $days = match($period) {
+           '7d' => 7,
+           '30d' => 30,
+           '3m' => 90,
+           default => 7
+       };
+
+       $data = [];
+       for ($i = $days - 1; $i >= 0; $i--) {
+           $date = Carbon::today()->subDays($i);
+           
+           $production = Production::whereDate('production_date', $date)
+               ->where('status', 'completed')
+               ->selectRaw('
+                   SUM(actual_quantity) as total_actual,
+                   SUM(defect_quantity) as total_defects
+               ')
+               ->first();
+           
+           $totalActual = $production->total_actual ?? 0;
+           $totalDefects = $production->total_defects ?? 0;
+           
+           $defectRate = $totalActual > 0 ? round(($totalDefects / $totalActual) * 100, 2) : 0;
+           
+           // Fallback untuk data kosong
+           if ($totalActual == 0 && $period === '7d' && $i >= 4) { // Sample for last 3 days
+               $totalActual = rand(800, 1200);
+               $totalDefects = rand(10, 50);
+               $defectRate = round(($totalDefects / $totalActual) * 100, 2);
+           }
+           
+           $data[] = [
+               'date' => $date->format('Y-m-d'),
+               'day' => $date->format('D'),
+               'total_actual' => $totalActual,
+               'total_defects' => $totalDefects,
+               'defect_rate' => $defectRate,
+               'good_quantity' => $totalActual - $totalDefects
+           ];
+       }
+
+       return $data;
+    }
+
+    /**
+ * Validate shift time untuk cross-day
+ */
+private function validateShiftTime($data)
+{
+    $errors = [];
+    $startTime = $data['start_time'];
+    $endTime = $data['end_time'];
+    $shift = $data['shift'];
+    
+    // Cek apakah waktu sama
+    if ($startTime === $endTime) {
+        $errors['end_time'] = 'Waktu mulai dan selesai tidak boleh sama.';
+        return $errors;
+    }
+    
+    // Untuk shift malam, izinkan cross-day (23:00 → 06:30 valid)
+    if ($shift === 'malam') {
+        // Shift malam boleh lintas hari, jadi tidak perlu validasi ketat
+        return $errors;
+    }
+    
+    // Untuk shift pagi dan siang, end time harus > start time (same day)
+    $startMinutes = $this->timeToMinutes($startTime);
+    $endMinutes = $this->timeToMinutes($endTime);
+    
+    if ($endMinutes <= $startMinutes) {
+        $errors['end_time'] = 'Waktu selesai harus setelah waktu mulai.';
+    }
+    
+    return $errors;
 }
+
+/**
+ * Convert time string to minutes
+ */
+private function timeToMinutes($timeString)
+{
+    list($hours, $minutes) = explode(':', $timeString);
+    return (int)$hours * 60 + (int)$minutes;
 }
+
+/**
+ * Validate raw materials JSON
+ */
+private function validateRawMaterials($rawMaterialsJson)
+{
+    $errors = [];
+    
+    try {
+        $materials = json_decode($rawMaterialsJson, true);
+        
+        if (empty($materials)) {
+            $errors['raw_materials_used'] = 'Minimal harus memilih 1 bahan baku yang digunakan.';
+            return $errors;
+        }
+        
+        foreach ($materials as $index => $material) {
+            // Cek struktur data
+            if (!isset($material['material_id']) || !isset($material['quantity'])) {
+                $errors['raw_materials_used'] = 'Format data bahan baku tidak valid.';
+                break;
+            }
+            
+            // Cek quantity harus > 0
+            if ($material['quantity'] <= 0) {
+                $errors['raw_materials_used'] = 'Jumlah bahan baku harus lebih dari 0.';
+                break;
+            }
+            
+            // Cek apakah material_id valid
+            $rawMaterial = \App\Models\RawMaterial::find($material['material_id']);
+            if (!$rawMaterial) {
+                $errors['raw_materials_used'] = 'Bahan baku tidak ditemukan dalam sistem.';
+                break;
+            }
+            
+            // Cek stock availability
+            if ($material['quantity'] > $rawMaterial->current_stock) {
+                $errors['raw_materials_used'] = "Stock {$rawMaterial->name} tidak mencukupi. Available: {$rawMaterial->current_stock} {$rawMaterial->unit}";
+                break;
+            }
+        }
+        
+    } catch (\Exception $e) {
+        $errors['raw_materials_used'] = 'Format JSON bahan baku tidak valid.';
+    }
+    
+    return $errors;
+}
+
+} // ← Closing brace class

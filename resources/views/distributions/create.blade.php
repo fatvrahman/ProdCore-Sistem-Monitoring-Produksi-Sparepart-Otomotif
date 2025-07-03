@@ -361,7 +361,7 @@
                     </div>
 
                     <div id="available-batches">
-                        @if($availableBatches->count() > 0)
+                        @if(count($availableBatches) > 0)
                             @foreach($availableBatches as $batch)
                             <div class="batch-item" data-batch-id="{{ $batch['id'] }}">
                                 <div class="batch-info">
@@ -401,19 +401,20 @@
                             </div>
                             @endforeach
                         @else
-                            <div class="batch-selector">
-                                <i class="fas fa-exclamation-triangle text-warning mb-3" style="font-size: 3rem;"></i>
-                                <h5>Tidak Ada Batch Tersedia</h5>
-                                <p class="text-muted mb-3">
-                                    Belum ada batch produksi yang siap untuk distribusi.<br>
-                                    Pastikan ada produksi yang sudah selesai dan lolos QC.
-                                </p>
-                                <a href="{{ route('productions.index') }}" class="btn btn-outline-primary">
-                                    <i class="fas fa-eye"></i> Lihat Data Produksi
-                                </a>
-                            </div>
-                        @endif
-                    </div>
+                        
+        <div class="batch-selector">
+            <i class="fas fa-exclamation-triangle text-warning mb-3" style="font-size: 3rem;"></i>
+            <h5>Tidak Ada Batch Tersedia</h5>
+            <p class="text-muted mb-3">
+                Belum ada batch produksi yang siap untuk distribusi.<br>
+                Pastikan ada produksi yang sudah selesai dan lolos QC.
+            </p>
+            <a href="{{ route('productions.index') }}" class="btn btn-outline-primary">
+                <i class="fas fa-eye"></i> Lihat Data Produksi
+            </a>
+        </div>
+    @endif
+</div>
 
                     <!-- Selected Items Preview -->
                     <div id="selected-items-preview" style="display: none;">

@@ -1,89 +1,68 @@
-{{-- File: resources/views/master-data/products.blade.php --}}
+{{-- File: resources/views/master-data/products.blade.php - SIMPLE FUNCTIONAL VERSION --}}
 @extends('layouts.app')
 
-@section('title', 'Produk')
+@section('title', 'Manajemen Produk')
 
 @push('styles')
 <style>
 :root {
-    --products-primary: #28a745;
-    --products-secondary: #20c997;
-    --products-gradient: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    --primary-color: #28a745;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --info-color: #17a2b8;
 }
 
 .products-header {
-    background: var(--products-gradient);
+    background: linear-gradient(135deg, var(--primary-color) 0%, #20c997 100%);
     color: white;
-    border-radius: 15px;
+    border-radius: 10px;
     padding: 2rem;
     margin-bottom: 2rem;
-    box-shadow: 0 4px 25px rgba(40, 167, 69, 0.3);
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
 }
 
 .stats-card {
     background: white;
-    border-radius: 15px;
+    border-radius: 10px;
     padding: 1.5rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    border-left: 5px solid var(--products-primary);
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    border-left: 4px solid var(--primary-color);
+    margin-bottom: 1rem;
+    transition: transform 0.2s;
 }
 
 .stats-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
-}
-
-.stats-card .stats-icon {
-    position: absolute;
-    right: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 2.5rem;
-    opacity: 0.1;
-    color: var(--products-primary);
-}
-
-.filter-card {
-    background: white;
-    border-radius: 15px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 15px rgba(0,0,0,0.1);
-    margin-bottom: 2rem;
 }
 
 .table-container {
     background: white;
-    border-radius: 15px;
+    border-radius: 10px;
     padding: 1.5rem;
-    box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
-.btn-products {
-    background: var(--products-gradient);
+.btn-primary-custom {
+    background: var(--primary-color);
     border: none;
-    color: white;
-    font-weight: 500;
     border-radius: 8px;
     padding: 0.5rem 1rem;
-    transition: all 0.3s ease;
+    color: white;
+    transition: all 0.3s;
 }
 
-.btn-products:hover {
+.btn-primary-custom:hover {
+    background: #218838;
     transform: translateY(-1px);
-    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
     color: white;
 }
 
 .brand-badge {
     font-size: 0.8rem;
-    font-weight: 500;
-    border-radius: 12px;
     padding: 0.3rem 0.8rem;
-    background: #e9ecef;
-    color: #495057;
+    border-radius: 12px;
+    font-weight: 500;
 }
 
 .brand-honda { background: #dc3545; color: white; }
@@ -94,36 +73,19 @@
 
 .status-badge {
     font-size: 0.8rem;
-    font-weight: 500;
-    border-radius: 12px;
     padding: 0.3rem 0.8rem;
+    border-radius: 12px;
+    font-weight: 500;
 }
 
 .status-active { background: #d4edda; color: #155724; }
 .status-inactive { background: #f8d7da; color: #721c24; }
 
-.modal-header {
-    background: var(--products-gradient);
-    color: white;
-    border-top-left-radius: 15px;
-    border-top-right-radius: 15px;
-}
-
-.form-control:focus {
-    border-color: var(--products-primary);
-    box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
-}
-
-.btn-check:checked + .btn {
-    background-color: var(--products-primary);
-    border-color: var(--products-primary);
-}
-
 .product-image {
     width: 50px;
     height: 50px;
     border-radius: 8px;
-    background: var(--products-gradient);
+    background: var(--primary-color);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -132,26 +94,47 @@
     font-size: 1.2rem;
 }
 
-.specs-tooltip {
-    max-width: 300px;
+.form-container {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
 }
 
-.bulk-actions {
-    background: #f8f9fa;
-    border-radius: 10px;
+.alert {
+    border-radius: 8px;
     padding: 1rem;
     margin-bottom: 1rem;
-    display: none;
 }
 
-.bulk-actions.show {
-    display: block;
+.alert-success {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.alert-danger {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.loading {
+    display: none;
+    text-align: center;
+    padding: 2rem;
+}
+
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
 }
 
 .weight-display {
     font-family: 'Courier New', monospace;
     font-weight: bold;
-    color: var(--products-primary);
+    color: var(--primary-color);
 }
 
 .thickness-display {
@@ -159,36 +142,12 @@
     font-weight: bold;
     color: #6c757d;
 }
-
-@media (max-width: 768px) {
-    .products-header {
-        padding: 1.5rem;
-        text-align: center;
-    }
-    
-    .stats-card {
-        margin-bottom: 1rem;
-    }
-    
-    .filter-card {
-        padding: 1rem;
-    }
-    
-    .table-responsive {
-        font-size: 0.9rem;
-    }
-    
-    .product-image {
-        width: 40px;
-        height: 40px;
-        font-size: 1rem;
-    }
-}
 </style>
 @endpush
 
 @section('content')
 <div class="container-fluid">
+    
     <!-- Header Section -->
     <div class="products-header">
         <div class="row align-items-center">
@@ -197,7 +156,7 @@
                 <p class="mb-0">Kelola jenis produk brakepad, spesifikasi, dan karakteristik</p>
             </div>
             <div class="col-md-4 text-md-end text-center mt-3 mt-md-0">
-                <button class="btn btn-light btn-lg" data-bs-toggle="modal" data-bs-target="#addProductModal">
+                <button class="btn btn-light btn-lg" onclick="showAddForm()">
                     <i class="fas fa-plus me-2"></i>Tambah Produk
                 </button>
             </div>
@@ -206,117 +165,136 @@
 
     <!-- Statistics Cards -->
     <div class="row mb-4">
-        <div class="col-lg-3 col-md-6 mb-3">
+        <div class="col-lg-3 col-md-6">
             <div class="stats-card">
-                <h4 class="text-success fw-bold">{{ number_format($stats['total_products']) }}</h4>
+                <h4 class="text-success fw-bold">{{ $stats['total_products'] ?? 0 }}</h4>
                 <p class="mb-0 text-muted">Total Produk</p>
-                <i class="fas fa-cube stats-icon"></i>
             </div>
         </div>
-        <div class="col-lg-3 col-md-6 mb-3">
+        <div class="col-lg-3 col-md-6">
             <div class="stats-card">
-                <h4 class="text-primary fw-bold">{{ number_format($stats['active_products']) }}</h4>
+                <h4 class="text-primary fw-bold">{{ $stats['active_products'] ?? 0 }}</h4>
                 <p class="mb-0 text-muted">Produk Aktif</p>
-                <i class="fas fa-check-circle stats-icon"></i>
             </div>
         </div>
-        <div class="col-lg-3 col-md-6 mb-3">
+        <div class="col-lg-3 col-md-6">
             <div class="stats-card">
-                <h4 class="text-danger fw-bold">{{ number_format($stats['inactive_products']) }}</h4>
+                <h4 class="text-danger fw-bold">{{ $stats['inactive_products'] ?? 0 }}</h4>
                 <p class="mb-0 text-muted">Produk Tidak Aktif</p>
-                <i class="fas fa-times-circle stats-icon"></i>
             </div>
         </div>
-        <div class="col-lg-3 col-md-6 mb-3">
+        <div class="col-lg-3 col-md-6">
             <div class="stats-card">
-                <h4 class="text-info fw-bold">{{ $stats['by_brand']->count() }}</h4>
+                <h4 class="text-info fw-bold">{{ $brands->count() ?? 0 }}</h4>
                 <p class="mb-0 text-muted">Brand Aktif</p>
-                <i class="fas fa-tags stats-icon"></i>
             </div>
         </div>
     </div>
 
-    <!-- Brand Distribution Chart -->
-    <div class="row mb-4">
-        <div class="col-lg-8">
-            <div class="stats-card">
-                <h5 class="mb-3">Distribusi Produk per Brand</h5>
-                <canvas id="brandChart" height="100"></canvas>
+    <!-- Add Product Form (Hidden by default) -->
+    <div class="form-container" id="addProductContainer" style="display: none;">
+        <h5 class="mb-3">
+            <i class="fas fa-plus me-2"></i>Tambah Produk Baru
+            <button type="button" class="btn btn-sm btn-outline-secondary float-end" onclick="hideAddForm()">
+                <i class="fas fa-times"></i> Tutup
+            </button>
+        </h5>
+        
+        <!-- Alert Messages -->
+        <div id="alertContainer"></div>
+        
+        <form id="addProductForm" method="POST" action="{{ route('master-data.products.store') }}">
+            @csrf
+            <div class="row">
+                <!-- Basic Information -->
+                <div class="col-md-6">
+                    <h6 class="border-bottom pb-2 mb-3">Informasi Dasar</h6>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Kode Produk <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" name="code" required>
+                            <button type="button" class="btn btn-outline-secondary" onclick="generateProductCode()" title="Generate Kode">
+                                <i class="fas fa-magic"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Nama Produk <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" required placeholder="contoh: Brakepad Honda Beat">
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Brand <span class="text-danger">*</span></label>
+                            <select class="form-select" name="brand" required>
+                                <option value="">Pilih Brand</option>
+                                <option value="Honda">Honda</option>
+                                <option value="Yamaha">Yamaha</option>
+                                <option value="Suzuki">Suzuki</option>
+                                <option value="Kawasaki">Kawasaki</option>
+                                <option value="TVS">TVS</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Model <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="model" required placeholder="contoh: Beat, Vario, Mio">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Deskripsi</label>
+                        <textarea class="form-control" name="description" rows="3" placeholder="Deskripsi produk dan penggunaan..."></textarea>
+                    </div>
+                </div>
+                
+                <!-- Technical Specifications -->
+                <div class="col-md-6">
+                    <h6 class="border-bottom pb-2 mb-3">Spesifikasi Teknis</h6>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Berat Standar (gram) <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" name="standard_weight" step="0.01" min="0" max="999.99" required placeholder="120.50">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Ketebalan (mm) <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" name="standard_thickness" step="0.01" min="0" max="99.99" required placeholder="4.50">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Spesifikasi (JSON)</label>
+                        <textarea class="form-control" name="specifications" rows="4" placeholder='{"material": "Semi-metallic", "operating_temp": "200-450°C", "friction_coefficient": "0.35-0.45"}'></textarea>
+                        <small class="text-muted">Format JSON untuk spesifikasi detail</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Status <span class="text-danger">*</span></label>
+                        <select class="form-select" name="is_active" required>
+                            <option value="1">Aktif</option>
+                            <option value="0">Tidak Aktif</option>
+                        </select>
+                    </div>
+                </div>
             </div>
-        </div>
-        <div class="col-lg-4">
-            <div class="stats-card">
-                <h5 class="mb-3">Summary Brand</h5>
-                @foreach($stats['by_brand'] as $brand)
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="brand-badge brand-{{ strtolower($brand->brand) }}">
-                        {{ $brand->brand }}
-                    </span>
-                    <strong>{{ $brand->count }} produk</strong>
-                </div>
-                @endforeach
-            </div>
-        </div>
-    </div>
-
-    <!-- Filter Section -->
-    <div class="filter-card">
-        <form method="GET" action="{{ route('master-data.products') }}" id="filterForm">
-            <div class="row align-items-end">
-                <div class="col-lg-3 col-md-6 mb-3">
-                    <label class="form-label">Brand</label>
-                    <select class="form-select" name="brand" onchange="document.getElementById('filterForm').submit()">
-                        <option value="">Semua Brand</option>
-                        @foreach($brands as $brand)
-                        <option value="{{ $brand }}" {{ $filters['brand'] == $brand ? 'selected' : '' }}>
-                            {{ $brand }}
-                        </option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="col-lg-3 col-md-6 mb-3">
-                    <label class="form-label">Status</label>
-                    <select class="form-select" name="is_active" onchange="document.getElementById('filterForm').submit()">
-                        <option value="">Semua Status</option>
-                        <option value="1" {{ $filters['is_active'] === '1' ? 'selected' : '' }}>Aktif</option>
-                        <option value="0" {{ $filters['is_active'] === '0' ? 'selected' : '' }}>Tidak Aktif</option>
-                    </select>
-                </div>
-                <div class="col-lg-4 col-md-8 mb-3">
-                    <label class="form-label">Pencarian</label>
-                    <input type="text" class="form-control" name="search" 
-                           value="{{ $filters['search'] }}" 
-                           placeholder="Nama produk, kode, brand, atau model...">
-                </div>
-                <div class="col-lg-2 col-md-4 mb-3">
-                    <button type="submit" class="btn btn-products w-100">
-                        <i class="fas fa-search me-2"></i>Cari
-                    </button>
-                </div>
+            
+            <div class="text-end">
+                <button type="button" class="btn btn-secondary me-2" onclick="hideAddForm()">Batal</button>
+                <button type="submit" class="btn btn-primary-custom">
+                    <i class="fas fa-save me-2"></i>Simpan
+                </button>
             </div>
         </form>
     </div>
 
-    <!-- Bulk Actions -->
-    <div class="bulk-actions" id="bulkActions">
-        <div class="row align-items-center">
-            <div class="col-md-6">
-                <span id="selectedCount">0</span> produk dipilih
-            </div>
-            <div class="col-md-6 text-md-end">
-                <div class="btn-group">
-                    <button class="btn btn-success btn-sm" onclick="bulkAction('activate')">
-                        <i class="fas fa-check me-1"></i>Aktifkan
-                    </button>
-                    <button class="btn btn-warning btn-sm" onclick="bulkAction('deactivate')">
-                        <i class="fas fa-pause me-1"></i>Non-aktifkan
-                    </button>
-                    <button class="btn btn-danger btn-sm" onclick="bulkAction('delete')">
-                        <i class="fas fa-trash me-1"></i>Hapus
-                    </button>
-                </div>
-            </div>
+    <!-- Loading Indicator -->
+    <div class="loading" id="loadingIndicator">
+        <div class="spinner-border text-success" role="status">
+            <span class="visually-hidden">Loading...</span>
         </div>
+        <p class="mt-2">Memproses data...</p>
     </div>
 
     <!-- Products Table -->
@@ -324,58 +302,33 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="mb-0">Daftar Produk ({{ $products->total() }})</h5>
             <div class="btn-group">
-                <button class="btn btn-outline-secondary btn-sm" onclick="toggleSelectAll()">
-                    <i class="fas fa-check-square me-1"></i>Pilih Semua
+                <button class="btn btn-outline-primary btn-sm" onclick="refreshData()">
+                    <i class="fas fa-refresh me-1"></i>Refresh
                 </button>
-                <button class="btn btn-outline-primary btn-sm" onclick="exportData('excel')">
-                    <i class="fas fa-file-excel me-1"></i>Excel
-                </button>
-                <button class="btn btn-outline-danger btn-sm" onclick="exportData('pdf')">
-                    <i class="fas fa-file-pdf me-1"></i>PDF
+                <button class="btn btn-outline-success btn-sm" onclick="exportData()">
+                    <i class="fas fa-download me-1"></i>Export
                 </button>
             </div>
         </div>
 
         <div class="table-responsive">
-            <table class="table table-hover" id="productsTable">
+            <table class="table table-hover">
                 <thead class="table-light">
                     <tr>
-                        <th width="40">
-                            <input type="checkbox" class="form-check-input" id="selectAll">
-                        </th>
                         <th width="60">Image</th>
-                        <th>
-                            <a href="{{ route('master-data.products', array_merge(request()->query(), ['sort' => 'code', 'direction' => $filters['sort'] == 'code' && $filters['direction'] == 'asc' ? 'desc' : 'asc'])) }}" 
-                               class="text-decoration-none text-dark">
-                                Kode Produk
-                                @if($filters['sort'] == 'code')
-                                    <i class="fas fa-sort-{{ $filters['direction'] == 'asc' ? 'up' : 'down' }} ms-1"></i>
-                                @endif
-                            </a>
-                        </th>
-                        <th>
-                            <a href="{{ route('master-data.products', array_merge(request()->query(), ['sort' => 'name', 'direction' => $filters['sort'] == 'name' && $filters['direction'] == 'asc' ? 'desc' : 'asc'])) }}" 
-                               class="text-decoration-none text-dark">
-                                Nama Produk
-                                @if($filters['sort'] == 'name')
-                                    <i class="fas fa-sort-{{ $filters['direction'] == 'asc' ? 'up' : 'down' }} ms-1"></i>
-                                @endif
-                            </a>
-                        </th>
+                        <th>Kode Produk</th>
+                        <th>Nama Produk</th>
                         <th>Brand & Model</th>
                         <th>Dimensi</th>
                         <th>Spesifikasi</th>
                         <th>Status</th>
-                        <th>Produksi</th>
+                        <th>Dibuat</th>
                         <th width="120">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse($products as $product)
                     <tr>
-                        <td>
-                            <input type="checkbox" class="form-check-input product-checkbox" value="{{ $product->id }}">
-                        </td>
                         <td>
                             <div class="product-image">
                                 {{ strtoupper(substr($product->brand, 0, 1)) }}{{ strtoupper(substr($product->model, 0, 1)) }}
@@ -406,15 +359,7 @@
                         </td>
                         <td>
                             @if($product->specifications)
-                                <button class="btn btn-sm btn-outline-info" 
-                                        data-bs-toggle="tooltip" 
-                                        data-bs-html="true"
-                                        data-bs-placement="top"
-                                        title="<div class='specs-tooltip'>
-                                            @foreach($product->specifications as $key => $value)
-                                                <strong>{{ ucfirst($key) }}:</strong> {{ $value }}<br>
-                                            @endforeach
-                                        </div>">
+                                <button class="btn btn-sm btn-outline-info" onclick="showSpecs({{ $product->id }})" title="Lihat Spesifikasi">
                                     <i class="fas fa-info-circle"></i>
                                 </button>
                             @else
@@ -428,8 +373,8 @@
                         </td>
                         <td>
                             <div class="small">
-                                <div class="text-muted">Bulan ini:</div>
-                                <strong class="text-success">{{ number_format($product->getMonthlyProduction()) }}</strong>
+                                {{ $product->created_at->format('d M Y') }}
+                                <div class="text-muted">{{ $product->created_at->diffForHumans() }}</div>
                             </div>
                         </td>
                         <td>
@@ -449,7 +394,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="10" class="text-center py-4">
+                        <td colspan="9" class="text-center py-4">
                             <div class="text-muted">
                                 <i class="fas fa-boxes fa-3x mb-3"></i>
                                 <p class="mb-0">Tidak ada data produk yang ditemukan</p>
@@ -473,213 +418,20 @@
     </div>
 </div>
 
-<!-- Add Product Modal -->
-<div class="modal fade" id="addProductModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
+<!-- Specifications Modal -->
+<div class="modal fade" id="specsModal" tabindex="-1">
+    <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-plus me-2"></i>Tambah Produk Baru
-                </h5>
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-info-circle me-2"></i>Spesifikasi Produk</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form id="addProductForm">
-                @csrf
-                <div class="modal-body">
-                    <div class="row">
-                        <!-- Basic Information -->
-                        <div class="col-md-6">
-                            <h6 class="border-bottom pb-2 mb-3">Informasi Dasar</h6>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Kode Produk <span class="text-danger">*</span></label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control" name="code" required>
-                                    <button type="button" class="btn btn-outline-secondary" onclick="generateProductCode()">
-                                        <i class="fas fa-magic"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Nama Produk <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="name" required 
-                                       placeholder="contoh: Brakepad Honda Beat">
-                            </div>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Brand <span class="text-danger">*</span></label>
-                                    <select class="form-select" name="brand" required>
-                                        <option value="">Pilih Brand</option>
-                                        <option value="Honda">Honda</option>
-                                        <option value="Yamaha">Yamaha</option>
-                                        <option value="Suzuki">Suzuki</option>
-                                        <option value="Kawasaki">Kawasaki</option>
-                                        <option value="TVS">TVS</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Model <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" name="model" required 
-                                           placeholder="contoh: Beat, Vario, Mio">
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Deskripsi</label>
-                                <textarea class="form-control" name="description" rows="3" 
-                                          placeholder="Deskripsi produk dan penggunaan..."></textarea>
-                            </div>
-                        </div>
-                        
-                        <!-- Technical Specifications -->
-                        <div class="col-md-6">
-                            <h6 class="border-bottom pb-2 mb-3">Spesifikasi Teknis</h6>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Berat Standar (gram) <span class="text-danger">*</span></label>
-                                    <input type="number" class="form-control" name="standard_weight" 
-                                           step="0.01" min="0" max="999.99" required 
-                                           placeholder="120.50">
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Ketebalan (mm) <span class="text-danger">*</span></label>
-                                    <input type="number" class="form-control" name="standard_thickness" 
-                                           step="0.01" min="0" max="99.99" required 
-                                           placeholder="4.50">
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Spesifikasi (JSON)</label>
-                                <textarea class="form-control" name="specifications" rows="6" 
-                                          placeholder='{"material": "Semi-metallic", "operating_temp": "200-450°C", "friction_coefficient": "0.35-0.45"}'></textarea>
-                                <small class="text-muted">Format JSON untuk spesifikasi detail</small>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Status <span class="text-danger">*</span></label>
-                                <div class="btn-group w-100" role="group">
-                                    <input type="radio" class="btn-check" name="is_active" id="active_yes" value="1" checked>
-                                    <label class="btn btn-outline-success" for="active_yes">Aktif</label>
-                                    
-                                    <input type="radio" class="btn-check" name="is_active" id="active_no" value="0">
-                                    <label class="btn btn-outline-danger" for="active_no">Tidak Aktif</label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-products">
-                        <i class="fas fa-save me-2"></i>Simpan
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Edit Product Modal -->
-<div class="modal fade" id="editProductModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-edit me-2"></i>Edit Produk
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="modal-body">
+                <div id="specsContent"></div>
             </div>
-            <form id="editProductForm">
-                @csrf
-                @method('PUT')
-                <input type="hidden" name="product_id" id="edit_product_id">
-                <div class="modal-body">
-                    <div class="row">
-                        <!-- Basic Information -->
-                        <div class="col-md-6">
-                            <h6 class="border-bottom pb-2 mb-3">Informasi Dasar</h6>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Kode Produk <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="code" id="edit_code" required>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Nama Produk <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="name" id="edit_name" required>
-                            </div>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Brand <span class="text-danger">*</span></label>
-                                    <select class="form-select" name="brand" id="edit_brand" required>
-                                        <option value="">Pilih Brand</option>
-                                        <option value="Honda">Honda</option>
-                                        <option value="Yamaha">Yamaha</option>
-                                        <option value="Suzuki">Suzuki</option>
-                                        <option value="Kawasaki">Kawasaki</option>
-                                        <option value="TVS">TVS</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Model <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" name="model" id="edit_model" required>
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Deskripsi</label>
-                                <textarea class="form-control" name="description" id="edit_description" rows="3"></textarea>
-                            </div>
-                        </div>
-                        
-                        <!-- Technical Specifications -->
-                        <div class="col-md-6">
-                            <h6 class="border-bottom pb-2 mb-3">Spesifikasi Teknis</h6>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Berat Standar (gram) <span class="text-danger">*</span></label>
-                                    <input type="number" class="form-control" name="standard_weight" id="edit_standard_weight" 
-                                           step="0.01" min="0" max="999.99" required>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Ketebalan (mm) <span class="text-danger">*</span></label>
-                                    <input type="number" class="form-control" name="standard_thickness" id="edit_standard_thickness" 
-                                           step="0.01" min="0" max="99.99" required>
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Spesifikasi (JSON)</label>
-                                <textarea class="form-control" name="specifications" id="edit_specifications" rows="6"></textarea>
-                                <small class="text-muted">Format JSON untuk spesifikasi detail</small>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Status <span class="text-danger">*</span></label>
-                                <div class="btn-group w-100" role="group">
-                                    <input type="radio" class="btn-check" name="is_active" id="edit_active_yes" value="1">
-                                    <label class="btn btn-outline-success" for="edit_active_yes">Aktif</label>
-                                    
-                                    <input type="radio" class="btn-check" name="is_active" id="edit_active_no" value="0">
-                                    <label class="btn btn-outline-danger" for="edit_active_no">Tidak Aktif</label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-products">
-                        <i class="fas fa-save me-2"></i>Update
-                    </button>
-                </div>
-            </form>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+            </div>
         </div>
     </div>
 </div>
@@ -687,115 +439,33 @@
 
 @push('scripts')
 <script>
-// Global variables
-let selectedProducts = [];
+// Ensure CSRF token is available
+window.csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
 
 // Initialize page
-$(document).ready(function() {
-    initializeBrandChart();
-    setupEventListeners();
-    initializeTooltips();
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Products page loaded');
+    console.log('CSRF Token:', window.csrfToken);
 });
 
-// Initialize brand distribution chart
-function initializeBrandChart() {
-    const ctx = document.getElementById('brandChart').getContext('2d');
-    const brandData = @json($stats['by_brand']);
+// Show add product form
+function showAddForm() {
+    document.getElementById('addProductContainer').style.display = 'block';
+    document.getElementById('alertContainer').innerHTML = '';
+    document.getElementById('addProductForm').reset();
     
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: brandData.map(item => item.brand),
-            datasets: [{
-                label: 'Jumlah Produk',
-                data: brandData.map(item => item.count),
-                backgroundColor: [
-                    '#dc3545', // Honda - Red
-                    '#6f42c1', // Yamaha - Purple
-                    '#fd7e14', // Suzuki - Orange
-                    '#20c997', // Kawasaki - Teal
-                    '#6c757d'  // TVS - Gray
-                ],
-                borderWidth: 2,
-                borderColor: '#fff',
-                borderRadius: 8,
-                borderSkipped: false,
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
-                }
-            }
-        }
+    // Scroll to form
+    document.getElementById('addProductContainer').scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'start'
     });
 }
 
-// Initialize tooltips
-function initializeTooltips() {
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-}
-
-// Setup event listeners
-function setupEventListeners() {
-    // Select all checkbox
-    $('#selectAll').change(function() {
-        $('.product-checkbox').prop('checked', this.checked);
-        updateBulkActions();
-    });
-    
-    // Individual checkboxes
-    $(document).on('change', '.product-checkbox', function() {
-        updateBulkActions();
-    });
-    
-    // Add product form submission
-    $('#addProductForm').submit(function(e) {
-        e.preventDefault();
-        submitProductForm('add');
-    });
-    
-    // Edit product form submission
-    $('#editProductForm').submit(function(e) {
-        e.preventDefault();
-        submitProductForm('edit');
-    });
-}
-
-// Update bulk actions visibility
-function updateBulkActions() {
-    const checkedBoxes = $('.product-checkbox:checked');
-    selectedProducts = checkedBoxes.map(function() { return this.value; }).get();
-    
-    $('#selectedCount').text(selectedProducts.length);
-    
-    if (selectedProducts.length > 0) {
-        $('#bulkActions').addClass('show');
-    } else {
-        $('#bulkActions').removeClass('show');
-    }
-}
-
-// Toggle select all
-function toggleSelectAll() {
-    const allChecked = $('.product-checkbox:checked').length === $('.product-checkbox').length;
-    $('.product-checkbox').prop('checked', !allChecked);
-    $('#selectAll').prop('checked', !allChecked);
-    updateBulkActions();
+// Hide add product form
+function hideAddForm() {
+    document.getElementById('addProductContainer').style.display = 'none';
+    document.getElementById('addProductForm').reset();
+    document.getElementById('alertContainer').innerHTML = '';
 }
 
 // Generate product code
@@ -805,292 +475,245 @@ function generateProductCode() {
     fetch('/api/master-data/generate-code?type=product', {
         method: 'GET',
         headers: {
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            'Accept': 'application/json'
+            'X-CSRF-TOKEN': window.csrfToken,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
         }
     })
     .then(response => response.json())
     .then(data => {
         hideLoading();
+        
         if (data.success) {
-            $('input[name="code"]').val(data.code);
-            showSuccess('Kode produk berhasil di-generate: ' + data.code);
+            document.querySelector('input[name="code"]').value = data.code;
+            showAlert('success', 'Kode produk berhasil di-generate: ' + data.code);
         } else {
-            showError(data.message);
+            showAlert('danger', data.message || 'Gagal generate kode produk');
         }
     })
     .catch(error => {
         hideLoading();
-        showError('Gagal generate kode produk');
-        console.error(error);
+        console.error('Generate code error:', error);
+        showAlert('danger', 'Gagal generate kode produk: ' + error.message);
     });
 }
 
-// Submit product form (add/edit)
-function submitProductForm(action) {
-    const form = action === 'add' ? '#addProductForm' : '#editProductForm';
-    const formData = new FormData($(form)[0]);
+// Form submission
+document.getElementById('addProductForm').addEventListener('submit', function(e) {
+    e.preventDefault();
     
-    let url = '{{ route("master-data.products.store") }}';
-    if (action === 'edit') {
-        const productId = $('#edit_product_id').val();
-        url = `/master-data/products/${productId}`;
-    }
+    const formData = new FormData(this);
+    const url = this.action;
+    
+    console.log('Submitting form to:', url);
     
     showLoading();
+    clearAlerts();
     
     fetch(url, {
-        method: action === 'add' ? 'POST' : 'PUT',
-        headers: {
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            'Accept': 'application/json'
-        },
-        body: action === 'add' ? formData : new URLSearchParams(new FormData($(form)[0]))
-    })
-    .then(response => response.json())
-    .then(data => {
-        hideLoading();
-        if (data.success) {
-            showSuccess(data.message);
-            $(form).closest('.modal').modal('hide');
-            location.reload();
-        } else {
-            showError(data.message);
-        }
-    })
-    .catch(error => {
-        hideLoading();
-        showError('Terjadi kesalahan saat menyimpan data');
-        console.error(error);
-    });
-}
-
-// Edit product
-function editProduct(productId) {
-    showLoading();
-    
-    // Get product data from table row (simplified approach)
-    // In production, fetch from API
-    $('#edit_product_id').val(productId);
-    $('#editProductModal').modal('show');
-    hideLoading();
-}
-
-// Delete product
-function deleteProduct(productId, productName) {
-    Swal.fire({
-        title: 'Konfirmasi Hapus',
-        text: `Apakah Anda yakin ingin menghapus produk "${productName}"?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc3545',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Ya, Hapus!',
-        cancelButtonText: 'Batal',
-        backdrop: true,
-        allowOutsideClick: false
-    }).then((result) => {
-        if (result.isConfirmed) {
-            performDeleteProduct(productId);
-        }
-    });
-}
-
-// Perform delete product
-function performDeleteProduct(productId) {
-    showLoading();
-    
-    fetch(`/master-data/products/${productId}`, {
-        method: 'DELETE',
-        headers: {
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        hideLoading();
-        if (data.success) {
-            showSuccess(data.message);
-            location.reload();
-        } else {
-            showError(data.message);
-        }
-    })
-    .catch(error => {
-        hideLoading();
-        showError('Gagal menghapus produk');
-        console.error(error);
-    });
-}
-
-// Bulk actions
-function bulkAction(action) {
-    if (selectedProducts.length === 0) {
-        showError('Pilih minimal satu produk');
-        return;
-    }
-    
-    let actionText = '';
-    switch(action) {
-        case 'activate': actionText = 'mengaktifkan'; break;
-        case 'deactivate': actionText = 'menonaktifkan'; break;
-        case 'delete': actionText = 'menghapus'; break;
-    }
-    
-    Swal.fire({
-        title: 'Konfirmasi Bulk Action',
-        text: `Apakah Anda yakin ingin ${actionText} ${selectedProducts.length} produk yang dipilih?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: action === 'delete' ? '#dc3545' : '#28a745',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: `Ya, ${actionText.charAt(0).toUpperCase() + actionText.slice(1)}!`,
-        cancelButtonText: 'Batal'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            performBulkAction(action);
-        }
-    });
-}
-
-// Perform bulk action
-function performBulkAction(action) {
-    showLoading();
-    
-    fetch('/master-data/bulk-action', {
         method: 'POST',
         headers: {
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': window.csrfToken,
             'Accept': 'application/json'
         },
-        body: JSON.stringify({
-            type: 'products',
-            action: action,
-            ids: selectedProducts
-        })
+        body: formData
     })
     .then(response => response.json())
     .then(data => {
         hideLoading();
+        
         if (data.success) {
-            showSuccess(data.message);
-            location.reload();
+            showAlert('success', data.message);
+            this.reset();
+            
+            // Refresh page after 2 seconds
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
         } else {
-            showError(data.message);
+            if (data.errors) {
+                showValidationErrors(data.errors);
+            } else {
+                showAlert('danger', data.message || 'Terjadi kesalahan saat menyimpan data');
+            }
         }
     })
     .catch(error => {
         hideLoading();
-        showError('Gagal melakukan bulk action');
-        console.error(error);
+        console.error('Submit error:', error);
+        showAlert('danger', 'Terjadi kesalahan saat menyimpan data: ' + error.message);
     });
+});
+
+// Show specifications
+function showSpecs(productId) {
+    const products = @json($products->items());
+    const product = products.find(p => p.id === productId);
+    
+    if (product && product.specifications) {
+        let specsHtml = '<table class="table table-sm">';
+        
+        try {
+            const specs = typeof product.specifications === 'string' ? 
+                         JSON.parse(product.specifications) : 
+                         product.specifications;
+            
+            Object.keys(specs).forEach(key => {
+                specsHtml += `
+                    <tr>
+                        <td><strong>${key.replace(/_/g, ' ').toUpperCase()}</strong></td>
+                        <td>${specs[key]}</td>
+                    </tr>
+                `;
+            });
+        } catch (e) {
+            specsHtml += `<tr><td colspan="2">Data spesifikasi tidak valid</td></tr>`;
+        }
+        
+        specsHtml += '</table>';
+        
+        document.getElementById('specsContent').innerHTML = specsHtml;
+        new bootstrap.Modal(document.getElementById('specsModal')).show();
+    }
+}
+
+// Edit product function
+function editProduct(productId) {
+    alert('Edit produk dengan ID: ' + productId + '\nFitur edit akan dikembangkan selanjutnya.');
+}
+
+// Delete product function
+function deleteProduct(productId, productName) {
+    if (confirm('Apakah Anda yakin ingin menghapus produk "' + productName + '"?')) {
+        showLoading();
+        
+        fetch('/master-data/products/' + productId, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': window.csrfToken,
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            
+            if (data.success) {
+                alert('Produk berhasil dihapus');
+                window.location.reload();
+            } else {
+                alert('Gagal menghapus produk: ' + data.message);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Delete error:', error);
+            alert('Gagal menghapus produk');
+        });
+    }
+}
+
+// Refresh data
+function refreshData() {
+    window.location.reload();
 }
 
 // Export data
-function exportData(format) {
-    const currentParams = new URLSearchParams(window.location.search);
-    const exportUrl = `/master-data/export?type=products&format=${format}&${currentParams.toString()}`;
-    
-    showLoading();
-    
-    fetch(exportUrl, {
-        method: 'GET',
-        headers: {
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        hideLoading();
-        if (data.success) {
-            showSuccess(data.message);
-            console.log('Export data:', data);
-        } else {
-            showError(data.message);
-        }
-    })
-    .catch(error => {
-        hideLoading();
-        showError('Gagal export data');
-        console.error(error);
-    });
+function exportData() {
+    alert('Fitur export akan dikembangkan selanjutnya.');
 }
 
-// Validate JSON input
-$(document).on('blur', 'textarea[name="specifications"]', function() {
-    const value = $(this).val().trim();
-    if (value) {
-        try {
-            JSON.parse(value);
-            $(this).removeClass('is-invalid').addClass('is-valid');
-            $(this).siblings('.invalid-feedback').remove();
-        } catch (e) {
-            $(this).removeClass('is-valid').addClass('is-invalid');
-            if (!$(this).siblings('.invalid-feedback').length) {
-                $(this).after('<div class="invalid-feedback">Format JSON tidak valid</div>');
-            }
-        }
-    } else {
-        $(this).removeClass('is-invalid is-valid');
-        $(this).siblings('.invalid-feedback').remove();
-    }
-});
+// Show loading indicator
+function showLoading() {
+    document.getElementById('loadingIndicator').style.display = 'block';
+}
+
+// Hide loading indicator
+function hideLoading() {
+    document.getElementById('loadingIndicator').style.display = 'none';
+}
+
+// Show alert message
+function showAlert(type, message) {
+    const alertContainer = document.getElementById('alertContainer');
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible">
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            ${message}
+        </div>
+    `;
+    alertContainer.innerHTML = alertHtml;
+}
+
+// Clear alerts
+function clearAlerts() {
+    document.getElementById('alertContainer').innerHTML = '';
+}
+
+// Show validation errors
+function showValidationErrors(errors) {
+    let errorMessages = '<ul class="mb-0">';
+    
+    Object.keys(errors).forEach(field => {
+        errorMessages += `<li>${errors[field][0]}</li>`;
+    });
+    
+    errorMessages += '</ul>';
+    
+    showAlert('danger', 'Validasi gagal:<br>' + errorMessages);
+}
 
 // Auto-suggest product name based on brand and model
-$(document).on('change', 'select[name="brand"], input[name="model"]', function() {
-    const brand = $('select[name="brand"]').val();
-    const model = $('input[name="model"]').val();
-    
-    if (brand && model) {
-        const suggestedName = `Brakepad ${brand} ${model}`;
-        if (!$('input[name="name"]').val()) {
-            $('input[name="name"]').val(suggestedName);
+document.addEventListener('change', function(e) {
+    if (e.target.name === 'brand' || e.target.name === 'model') {
+        const brand = document.querySelector('select[name="brand"]').value;
+        const model = document.querySelector('input[name="model"]').value;
+        const nameInput = document.querySelector('input[name="name"]');
+        
+        if (brand && model && !nameInput.value) {
+            nameInput.value = `Brakepad ${brand} ${model}`;
         }
     }
 });
 
-// Reset form when modal is closed
-$('#addProductModal').on('hidden.bs.modal', function() {
-    $('#addProductForm')[0].reset();
-    $('#addProductForm .is-invalid').removeClass('is-invalid');
-    $('#addProductForm .is-valid').removeClass('is-valid');
-    $('#addProductForm .invalid-feedback').remove();
-});
-
-$('#editProductModal').on('hidden.bs.modal', function() {
-    $('#editProductForm')[0].reset();
-    $('#editProductForm .is-invalid').removeClass('is-invalid');
-    $('#editProductForm .is-valid').removeClass('is-valid');
-    $('#editProductForm .invalid-feedback').remove();
-});
-
-// Real-time search
-let searchTimeout;
-$('input[name="search"]').on('input', function() {
-    clearTimeout(searchTimeout);
-    const query = $(this).val();
-    
-    searchTimeout = setTimeout(function() {
-        if (query.length >= 3 || query.length === 0) {
-            $('#filterForm').submit();
+// Validate JSON input
+document.addEventListener('blur', function(e) {
+    if (e.target.name === 'specifications') {
+        const value = e.target.value.trim();
+        if (value) {
+            try {
+                JSON.parse(value);
+                e.target.classList.remove('is-invalid');
+                e.target.classList.add('is-valid');
+                const feedback = e.target.parentNode.querySelector('.invalid-feedback');
+                if (feedback) feedback.remove();
+            } catch (err) {
+                e.target.classList.remove('is-valid');
+                e.target.classList.add('is-invalid');
+                if (!e.target.parentNode.querySelector('.invalid-feedback')) {
+                    const feedback = document.createElement('div');
+                    feedback.className = 'invalid-feedback';
+                    feedback.textContent = 'Format JSON tidak valid';
+                    e.target.parentNode.appendChild(feedback);
+                }
+            }
+        } else {
+            e.target.classList.remove('is-invalid', 'is-valid');
+            const feedback = e.target.parentNode.querySelector('.invalid-feedback');
+            if (feedback) feedback.remove();
         }
-    }, 500);
+    }
 });
 
-// Keyboard shortcuts
-$(document).keydown(function(e) {
-    // Ctrl + N for new product
-    if (e.ctrlKey && e.key === 'n') {
-        e.preventDefault();
-        $('#addProductModal').modal('show');
-    }
-    
-    // Escape to close modals
-    if (e.key === 'Escape') {
-        $('.modal.show').modal('hide');
+// Auto-hide alerts after 5 seconds
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('btn-close')) {
+        setTimeout(() => {
+            const alert = e.target.closest('.alert');
+            if (alert) {
+                alert.remove();
+            }
+        }, 100);
     }
 });
 </script>

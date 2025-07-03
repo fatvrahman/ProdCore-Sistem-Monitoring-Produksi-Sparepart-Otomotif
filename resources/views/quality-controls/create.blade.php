@@ -323,7 +323,7 @@
                     <label for="passed_quantity" class="form-label">Passed Quantity *</label>
                     <input type="number" class="form-control @error('passed_quantity') is-invalid @enderror" 
                            name="passed_quantity" id="passed_quantity" 
-                           value="{{ old('passed_quantity', 0) }}" min="0" onchange="calculateResults()">
+                           value="{{ old('passed_quantity', 0) }}" min="0">
                     @error('passed_quantity')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
@@ -333,7 +333,7 @@
                     <label for="failed_quantity" class="form-label">Failed Quantity *</label>
                     <input type="number" class="form-control @error('failed_quantity') is-invalid @enderror" 
                            name="failed_quantity" id="failed_quantity" 
-                           value="{{ old('failed_quantity', 0) }}" min="0" onchange="calculateResults()">
+                           value="{{ old('failed_quantity', 0) }}" min="0">
                     @error('failed_quantity')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
@@ -520,6 +520,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize form
     updateStepDisplay();
     calculateResults();
+    updateSummaryCard(); // ← FIXED: Tambahkan ini
     
     // Set up form validation
     setupFormValidation();
@@ -559,6 +560,7 @@ function nextStep() {
             
             if (currentStep === 4) {
                 updatePreview();
+                updateSummaryCard(); // ← FIXED: Tambahkan ini
             }
         }
     }
@@ -668,33 +670,51 @@ function calculateResults() {
     
     // Update summary alert
     const summaryText = document.getElementById('summary-text');
-    if (total > 0) {
-        summaryText.innerHTML = `
-            Total inspected: ${total} dari ${sampleSize} sample | 
-            Pass rate: ${passRate}% | 
-            Status: ${failedQty > 0 ? '<span class="text-danger">FAILED</span>' : '<span class="text-success">PASSED</span>'}
-        `;
-    } else {
-        summaryText.textContent = 'Masukkan jumlah passed dan failed quantity';
+    if (summaryText) {
+        if (total > 0) {
+            summaryText.innerHTML = `
+                Total inspected: ${total} dari ${sampleSize} sample | 
+                Pass rate: ${passRate}% | 
+                Status: ${failedQty > 0 ? '<span class="text-danger">FAILED</span>' : '<span class="text-success">PASSED</span>'}
+            `;
+        } else {
+            summaryText.textContent = 'Masukkan jumlah passed dan failed quantity';
+        }
     }
     
-    // Update preview summary
+    // Update preview summary - ← FIXED: Pastikan ini selalu dipanggil
     updateSummaryCard();
 }
 
 function updateSummaryCard() {
+    // ← FIXED: Pastikan element ada
+    const sampleElement = document.getElementById('summary-sample');
+    const passedElement = document.getElementById('summary-passed');
+    const failedElement = document.getElementById('summary-failed');
+    const rateElement = document.getElementById('summary-rate');
+    const statusElement = document.getElementById('summary-status');
+    
+    if (!sampleElement || !passedElement || !failedElement || !rateElement || !statusElement) {
+        console.log('Summary card elements not found');
+        return;
+    }
+    
     const sampleSize = parseInt(document.getElementById('sample_size').value) || 0;
     const passedQty = parseInt(document.getElementById('passed_quantity').value) || 0;
     const failedQty = parseInt(document.getElementById('failed_quantity').value) || 0;
     const total = passedQty + failedQty;
     const passRate = total > 0 ? ((passedQty / total) * 100).toFixed(1) : 0;
     
-    document.getElementById('summary-sample').textContent = sampleSize;
-    document.getElementById('summary-passed').textContent = passedQty;
-    document.getElementById('summary-failed').textContent = failedQty;
-    document.getElementById('summary-rate').textContent = passRate + '%';
+    // ← FIXED: Debug log
+    console.log('Summary card update:', {
+        sampleSize, passedQty, failedQty, total, passRate
+    });
     
-    const statusElement = document.getElementById('summary-status');
+    sampleElement.textContent = sampleSize;
+    passedElement.textContent = passedQty;
+    failedElement.textContent = failedQty;
+    rateElement.textContent = passRate + '%';
+    
     if (failedQty > 0) {
         statusElement.innerHTML = '<span class="badge bg-danger">FAILED</span>';
     } else if (passedQty > 0) {
@@ -787,6 +807,9 @@ function updatePreview() {
     });
     
     document.getElementById('criteria-preview').innerHTML = criteriaHtml || 'Tidak ada kriteria dipilih';
+    
+    // ← FIXED: Update summary card juga
+    updateSummaryCard();
 }
 
 function resetForm() {
@@ -830,8 +853,16 @@ function setupFormValidation() {
         calculateResults();
     });
     
-    document.getElementById('passed_quantity').addEventListener('input', calculateResults);
-    document.getElementById('failed_quantity').addEventListener('input', calculateResults);
+    // ← FIXED: Tambah event listener langsung untuk passed/failed quantity
+    document.getElementById('passed_quantity').addEventListener('input', function() {
+        calculateResults();
+        updateSummaryCard(); // Tambahan untuk memastikan
+    });
+    
+    document.getElementById('failed_quantity').addEventListener('input', function() {
+        calculateResults();
+        updateSummaryCard(); // Tambahan untuk memastikan
+    });
     
     // Form submit validation
     document.getElementById('inspection-form').addEventListener('submit', function(e) {
@@ -851,6 +882,30 @@ function setupFormValidation() {
             }
         });
     });
+}
+
+// ← FIXED: Tambah function untuk debugging
+function debugSummaryCard() {
+    console.log('=== DEBUG SUMMARY CARD ===');
+    console.log('Sample size:', document.getElementById('sample_size').value);
+    console.log('Passed qty:', document.getElementById('passed_quantity').value);
+    console.log('Failed qty:', document.getElementById('failed_quantity').value);
+    
+    const elements = {
+        'summary-sample': document.getElementById('summary-sample'),
+        'summary-passed': document.getElementById('summary-passed'),
+        'summary-failed': document.getElementById('summary-failed'),
+        'summary-rate': document.getElementById('summary-rate'),
+        'summary-status': document.getElementById('summary-status')
+    };
+    
+    Object.entries(elements).forEach(([key, element]) => {
+        console.log(`${key}:`, element ? 'Found' : 'NOT FOUND');
+        if (element) console.log(`  Current text: "${element.textContent}"`);
+    });
+    
+    updateSummaryCard();
+    console.log('=== END DEBUG ===');
 }
 
 // Show validation errors from server

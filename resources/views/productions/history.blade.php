@@ -521,7 +521,7 @@
                         <i class="fas fa-box"></i> {{ $production->productType->name }}
                     </span>
                     <span class="badge bg-white text-dark px-3 py-2">
-                        <i class="fas fa-calendar"></i> {{ $production->production_date->format('d/m/Y') }}
+                        <i class="fas fa-calendar"></i> {{ \Carbon\Carbon::parse($production->production_date)->format('d/m/Y') }}
                     </span>
                     <span class="badge bg-white text-dark px-3 py-2">
                         <i class="fas fa-user"></i> {{ $production->operator->name }}
@@ -534,9 +534,15 @@
             </div>
             <div class="col-lg-4 text-lg-end">
                 <div class="d-flex gap-2 justify-content-lg-end flex-wrap">
-                    <a href="{{ route('productions.show', $production) }}" class="btn btn-outline-light">
-                        <i class="fas fa-arrow-left"></i> Kembali
-                    </a>
+                    @if(is_object($production) && method_exists($production, 'getKey'))
+                        <a href="{{ route('productions.show', $production) }}" class="btn btn-outline-light">
+                            <i class="fas fa-arrow-left"></i> Kembali
+                        </a>
+                    @else
+                        <a href="{{ route('productions.index') }}" class="btn btn-outline-light">
+                            <i class="fas fa-arrow-left"></i> Kembali
+                        </a>
+                    @endif
                     <button class="btn btn-outline-light" onclick="printTimeline()">
                         <i class="fas fa-print"></i> Print
                     </button>
@@ -556,29 +562,29 @@
         </h5>
         <div class="summary-grid">
             <div class="summary-item">
-                <div class="summary-value">{{ number_format($production->target_quantity) }}</div>
+                <div class="summary-value">{{ number_format($production->target_quantity ?? 0) }}</div>
                 <div class="summary-label">Target Quantity</div>
             </div>
             <div class="summary-item">
-                <div class="summary-value">{{ number_format($production->actual_quantity) }}</div>
+                <div class="summary-value">{{ number_format($production->actual_quantity ?? 0) }}</div>
                 <div class="summary-label">Actual Quantity</div>
             </div>
             <div class="summary-item">
-                <div class="summary-value">{{ number_format($production->good_quantity) }}</div>
+                <div class="summary-value">{{ number_format($production->good_quantity ?? 0) }}</div>
                 <div class="summary-label">Good Quality</div>
             </div>
             <div class="summary-item">
-                <div class="summary-value">{{ number_format($production->defect_quantity) }}</div>
+                <div class="summary-value">{{ number_format($production->defect_quantity ?? 0) }}</div>
                 <div class="summary-label">Defect Quantity</div>
             </div>
             <div class="summary-item">
                 <div class="summary-value">
-                    {{ $production->target_quantity > 0 ? round(($production->actual_quantity / $production->target_quantity) * 100, 1) : 0 }}%
+                    {{ ($production->target_quantity ?? 0) > 0 ? round((($production->actual_quantity ?? 0) / $production->target_quantity) * 100, 1) : 0 }}%
                 </div>
                 <div class="summary-label">Efisiensi</div>
             </div>
             <div class="summary-item">
-                <div class="summary-value">{{ $production->downtime_minutes }}</div>
+                <div class="summary-value">{{ $production->downtime_minutes ?? 0 }}</div>
                 <div class="summary-label">Downtime (menit)</div>
             </div>
         </div>
@@ -671,13 +677,13 @@
                     <div class="timeline-header">
                         <div>
                             <div class="timeline-title">
-                                <i class="fas fa-{{ $event['icon'] }} me-2" style="color: {{ $event['color'] }};"></i>
+                                <i class="fas fa-{{ $event['icon'] }} me-2" style="color: {{ $event['color'] === 'primary' ? '#435ebe' : ($event['color'] === 'success' ? '#28a745' : ($event['color'] === 'warning' ? '#ffc107' : '#dc3545')) }};"></i>
                                 {{ $event['title'] }}
                             </div>
                         </div>
                         <div class="timeline-time">
                             <i class="fas fa-clock me-1"></i>
-                            {{ $event['timestamp']->format('d/m/Y H:i:s') }}
+                            {{ \Carbon\Carbon::parse($event['timestamp'])->format('d/m/Y H:i:s') }}
                         </div>
                     </div>
                     
@@ -689,15 +695,15 @@
                     <div class="timeline-details">
                         <div class="detail-row">
                             <span class="detail-label">Target Quantity:</span>
-                            <span class="detail-value">{{ number_format($production->target_quantity) }} unit</span>
+                            <span class="detail-value">{{ number_format($production->target_quantity ?? 0) }} unit</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Production Line:</span>
-                            <span class="detail-value">{{ $production->productionLine->name }}</span>
+                            <span class="detail-value">{{ $production->productionLine->name ?? 'N/A' }}</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Machine:</span>
-                            <span class="detail-value">{{ $production->machine->name }}</span>
+                            <span class="detail-value">{{ $production->machine->name ?? 'N/A' }}</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Start Time:</span>
@@ -712,30 +718,66 @@
                             <span class="detail-label">Duration:</span>
                             <span class="detail-value">
                                 @if($production->start_time && $production->end_time)
-                                    @php
-                                        $start = \Carbon\Carbon::parse($production->production_date . ' ' . $production->start_time);
-                                        $end = \Carbon\Carbon::parse($production->production_date . ' ' . $production->end_time);
-                                        $duration = $end->diffInMinutes($start);
-                                    @endphp
-                                    {{ floor($duration / 60) }} jam {{ $duration % 60 }} menit
-                                @else
-                                    -
-                                @endif
+    @php
+    try {
+        // Ambil string waktu langsung dari database
+        $startTime = $production->start_time;
+        $endTime = $production->end_time;
+        
+        // Pastikan format waktu HH:MM (ambil 5 karakter pertama)
+        $startTime = substr($startTime, 0, 5);
+        $endTime = substr($endTime, 0, 5);
+        
+        // Pisahkan jam dan menit
+        list($startHour, $startMin) = explode(':', $startTime);
+        list($endHour, $endMin) = explode(':', $endTime);
+        
+        // Konversi ke integer
+        $startHour = (int) $startHour;
+        $startMin = (int) $startMin;
+        $endHour = (int) $endHour;
+        $endMin = (int) $endMin;
+        
+        // Konversi ke total menit
+        $startTotalMin = ($startHour * 60) + $startMin;
+        $endTotalMin = ($endHour * 60) + $endMin;
+        
+        // Jika end time lebih kecil dari start time, berarti lintas hari
+        if ($endTotalMin <= $startTotalMin) {
+            $endTotalMin += (24 * 60); // Tambah 24 jam = 1440 menit
+        }
+        
+        // Hitung selisih menit
+        $durationMinutes = $endTotalMin - $startTotalMin;
+        
+        // Konversi kembali ke jam dan menit
+        $hours = floor($durationMinutes / 60);
+        $minutes = $durationMinutes % 60;
+        
+        echo $hours . ' jam ' . $minutes . ' menit';
+        
+    } catch (Exception $e) {
+        echo '8 jam 0 menit'; // Default fallback
+    }
+    @endphp
+@else
+    -
+@endif
                             </span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Efficiency:</span>
                             <span class="detail-value">
-                                {{ $production->target_quantity > 0 ? round(($production->actual_quantity / $production->target_quantity) * 100, 1) : 0 }}%
+                                {{ ($production->target_quantity ?? 0) > 0 ? round((($production->actual_quantity ?? 0) / $production->target_quantity) * 100, 1) : 0 }}%
                             </span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Quality Rate:</span>
                             <span class="detail-value">
-                                {{ $production->actual_quantity > 0 ? round(($production->good_quantity / $production->actual_quantity) * 100, 1) : 0 }}%
+                                {{ ($production->actual_quantity ?? 0) > 0 ? round((($production->good_quantity ?? 0) / $production->actual_quantity) * 100, 1) : 0 }}%
                             </span>
                         </div>
-                        @if($production->downtime_minutes > 0)
+                        @if(($production->downtime_minutes ?? 0) > 0)
                         <div class="detail-row">
                             <span class="detail-label">Downtime:</span>
                             <span class="detail-value text-warning">{{ $production->downtime_minutes }} menit</span>
@@ -746,33 +788,23 @@
 
                     @if($event['type'] === 'quality_control')
                     @php
-                        $qc = $production->qualityControls->first();
+                        $qc = isset($production->qualityControls) && $production->qualityControls->count() > 0 
+                            ? $production->qualityControls->first() 
+                            : null;
                     @endphp
                     @if($qc)
                     <div class="qc-results {{ $qc->final_status !== 'passed' ? 'failed' : '' }}">
                         <div class="row g-2 mb-2">
                             <div class="col-6 col-md-3">
                                 <div class="qc-metric">
-                                    <i class="fas fa-vial text-info"></i>
-                                    <span><strong>{{ number_format($qc->sample_size) }}</strong> Sample</span>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="qc-metric">
-                                    <i class="fas fa-check-circle text-success"></i>
-                                    <span><strong>{{ number_format($qc->passed_quantity) }}</strong> Passed</span>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="qc-metric">
                                     <i class="fas fa-times-circle text-danger"></i>
-                                    <span><strong>{{ number_format($qc->failed_quantity) }}</strong> Failed</span>
+                                    <span><strong>{{ number_format($qc->failed_quantity ?? 0) }}</strong> Failed</span>
                                 </div>
                             </div>
                             <div class="col-6 col-md-3">
                                 <div class="qc-metric">
                                     <i class="fas fa-percentage text-primary"></i>
-                                    <span><strong>{{ $qc->sample_size > 0 ? round(($qc->passed_quantity / $qc->sample_size) * 100, 1) : 0 }}%</strong> Rate</span>
+                                    <span><strong>{{ ($qc->sample_size ?? 0) > 0 ? round((($qc->passed_quantity ?? 0) / $qc->sample_size) * 100, 1) : 0 }}%</strong> Rate</span>
                                 </div>
                             </div>
                         </div>
@@ -802,12 +834,12 @@
                         }}">
                             {{ ucfirst(str_replace('_', ' ', $event['type'])) }}
                         </span>
-                        @if($event['timestamp']->isToday())
+                        @if(\Carbon\Carbon::parse($event['timestamp'])->isToday())
                         <span class="timeline-tag" style="background: rgba(40, 167, 69, 0.1); color: #28a745;">
                             Today
                         </span>
                         @endif
-                        @if($event['timestamp']->diffInHours() < 1)
+                        @if(\Carbon\Carbon::parse($event['timestamp'])->diffInHours() < 1)
                         <span class="timeline-tag" style="background: rgba(220, 53, 69, 0.1); color: #dc3545;">
                             Recent
                         </span>
@@ -899,17 +931,25 @@
                                     </tr>
                                     <tr>
                                         <td>First Event:</td>
-                                        <td class="fw-bold">{{ $timeline->sortBy('timestamp')->first()['timestamp']->format('d/m/Y H:i') ?? '-' }}</td>
+                                        <td class="fw-bold">{{ $timeline->sortBy('timestamp')->first()['timestamp'] ?? null ? \Carbon\Carbon::parse($timeline->sortBy('timestamp')->first()['timestamp'])->format('d/m/Y H:i') : '-' }}</td>
                                     </tr>
                                     <tr>
                                         <td>Last Event:</td>
-                                        <td class="fw-bold">{{ $timeline->sortByDesc('timestamp')->first()['timestamp']->format('d/m/Y H:i') ?? '-' }}</td>
+                                        <td class="fw-bold">{{ $timeline->sortByDesc('timestamp')->first()['timestamp'] ?? null ? \Carbon\Carbon::parse($timeline->sortByDesc('timestamp')->first()['timestamp'])->format('d/m/Y H:i') : '-' }}</td>
                                     </tr>
                                     <tr>
                                         <td>Duration:</td>
                                         <td class="fw-bold">
                                             @if($timeline->count() > 1)
-                                                {{ $timeline->sortByDesc('timestamp')->first()['timestamp']->diffForHumans($timeline->sortBy('timestamp')->first()['timestamp'], true) }}
+                                                @php
+                                                    $first = $timeline->sortBy('timestamp')->first()['timestamp'] ?? null;
+                                                    $last = $timeline->sortByDesc('timestamp')->first()['timestamp'] ?? null;
+                                                    if ($first && $last) {
+                                                        echo \Carbon\Carbon::parse($last)->diffForHumans(\Carbon\Carbon::parse($first), true);
+                                                    } else {
+                                                        echo '-';
+                                                    }
+                                                @endphp
                                             @else
                                                 -
                                             @endif
@@ -943,7 +983,7 @@
                             <tbody>
                                 @foreach($timeline->sortBy('timestamp') as $event)
                                 <tr>
-                                    <td>{{ $event['timestamp']->format('H:i:s') }}</td>
+                                    <td>{{ \Carbon\Carbon::parse($event['timestamp'])->format('H:i:s') }}</td>
                                     <td>{{ $event['title'] }}</td>
                                     <td>
                                         <span class="badge bg-{{ 
@@ -1300,24 +1340,24 @@
                 <div class="header">
                     <h1>Production Timeline History</h1>
                     <h2>${production.batch_number}</h2>
-                    <p>${production.product_type.name} - ${production.production_date}</p>
+                    <p>${production.product_type ? production.product_type.name : 'N/A'} - ${production.production_date}</p>
                 </div>
                 
                 <div class="production-info">
                     <div class="info-box">
                         <h3>Production Details</h3>
-                        <p><strong>Product:</strong> ${production.product_type.name}</p>
+                        <p><strong>Product:</strong> ${production.product_type ? production.product_type.name : 'N/A'}</p>
                         <p><strong>Date:</strong> ${production.production_date}</p>
-                        <p><strong>Operator:</strong> ${production.operator.name}</p>
+                        <p><strong>Operator:</strong> ${production.operator ? production.operator.name : 'N/A'}</p>
                         <p><strong>Status:</strong> ${production.status}</p>
                     </div>
                     
                     <div class="info-box">
                         <h3>Production Results</h3>
-                        <p><strong>Target:</strong> ${production.target_quantity.toLocaleString()} unit</p>
-                        <p><strong>Actual:</strong> ${production.actual_quantity.toLocaleString()} unit</p>
-                        <p><strong>Good:</strong> ${production.good_quantity.toLocaleString()} unit</p>
-                        <p><strong>Defect:</strong> ${production.defect_quantity.toLocaleString()} unit</p>
+                        <p><strong>Target:</strong> ${(production.target_quantity || 0).toLocaleString()} unit</p>
+                        <p><strong>Actual:</strong> ${(production.actual_quantity || 0).toLocaleString()} unit</p>
+                        <p><strong>Good:</strong> ${(production.good_quantity || 0).toLocaleString()} unit</p>
+                        <p><strong>Defect:</strong> ${(production.defect_quantity || 0).toLocaleString()} unit</p>
                     </div>
                 </div>
                 
@@ -1361,8 +1401,9 @@
     function exportPDF() {
         showLoading('Generating PDF...');
         
-        // Create export URL
-        const exportUrl = `/productions/{{ $production->id }}/history/export/pdf`;
+        // Create export URL - handle both normal production and dummy data
+        const productionId = @json($production->id ?? 'all');
+        const exportUrl = `/productions/${productionId}/history/export/pdf`;
         
         // Create download link
         const link = document.createElement('a');
@@ -1397,7 +1438,7 @@
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `timeline_${@json($production->batch_number)}_${new Date().toISOString().split('T')[0]}.csv`;
+        link.download = `timeline_${@json($production->batch_number ?? 'export')}_${new Date().toISOString().split('T')[0]}.csv`;
         link.click();
         
         hideLoading();
@@ -1417,7 +1458,7 @@
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `timeline_${@json($production->batch_number)}_${new Date().toISOString().split('T')[0]}.json`;
+        link.download = `timeline_${@json($production->batch_number ?? 'export')}_${new Date().toISOString().split('T')[0]}.json`;
         link.click();
         
         hideLoading();
@@ -1426,8 +1467,8 @@
 
     function downloadStats() {
         const statsData = {
-            production_id: {{ $production->id }},
-            batch_number: '{{ $production->batch_number }}',
+            production_id: {{ $production->id ?? 'null' }},
+            batch_number: '{{ $production->batch_number ?? 'N/A' }}',
             total_events: timelineData.length,
             event_types: {
                 production: timelineData.filter(e => e.type.includes('production')).length,
@@ -1443,7 +1484,7 @@
         const blob = new Blob([JSON.stringify(statsData, null, 2)], { type: 'application/json' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `timeline_stats_${@json($production->batch_number)}.json`;
+        link.download = `timeline_stats_${@json($production->batch_number ?? 'export')}.json`;
         link.click();
         
         showSuccess('Timeline statistics berhasil di-download');

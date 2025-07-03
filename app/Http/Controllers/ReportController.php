@@ -1,5 +1,5 @@
 <?php
-// File: app/Http/Controllers/ReportController.php - UPDATED WITH DATA GENERATION
+// File: app/Http/Controllers/ReportController.php - UPDATED WITH NOTIFICATION INTEGRATION
 
 namespace App\Http\Controllers;
 
@@ -15,9 +15,20 @@ use App\Models\ProductType;
 use App\Models\ProductionLine;
 use App\Models\User;
 use App\Models\StockMovement;
+use App\Services\NotificationService; // ✅ ADDED
 
 class ReportController extends Controller
 {
+    protected $notificationService; // ✅ ADDED
+
+    /**
+     * Constructor - Inject NotificationService
+     */
+    public function __construct(NotificationService $notificationService) // ✅ ADDED
+    {
+        $this->notificationService = $notificationService;
+    }
+
     /**
      * Production Reports - Laporan Produksi
      */
@@ -64,6 +75,9 @@ class ReportController extends Controller
             }) ?? 0,
             'total_downtime' => $productions->sum('downtime_minutes')
         ];
+
+        // ✅ CHECK FOR PERFORMANCE ALERTS WHEN VIEWING REPORTS
+        $this->checkProductionPerformanceAlerts($summary, $dateFrom, $dateTo);
 
         // Data untuk dropdown filter
         $productTypes = ProductType::where('is_active', true)->get();
@@ -126,6 +140,9 @@ class ReportController extends Controller
             'rejected_count' => $qualityControls->where('final_status', 'rejected')->count()
         ];
 
+        // ✅ CHECK FOR QUALITY ALERTS WHEN VIEWING REPORTS
+        $this->checkQualityPerformanceAlerts($summary, $dateFrom, $dateTo);
+
         // Data untuk dropdown
         $inspectors = User::whereHas('role', function($q) {
             $q->where('name', 'qc');
@@ -182,6 +199,9 @@ class ReportController extends Controller
             'finished_goods_batches' => $finishedGoods->count()
         ];
 
+        // ✅ CHECK FOR STOCK ALERTS WHEN VIEWING REPORTS  
+        $this->checkStockPerformanceAlerts($summary, $rawMaterials, $dateFrom, $dateTo);
+
         // Chart data
         $chartData = $this->getStockChartData($dateFrom, $dateTo, $stockType);
 
@@ -223,6 +243,9 @@ class ReportController extends Controller
             'cancelled_count' => $distributions->where('status', 'cancelled')->count()
         ];
 
+        // ✅ CHECK FOR DISTRIBUTION ALERTS WHEN VIEWING REPORTS
+        $this->checkDistributionPerformanceAlerts($summary, $distributions, $dateFrom, $dateTo);
+
         // Chart data
         $chartData = $this->getDistributionChartData($dateFrom, $dateTo);
 
@@ -262,6 +285,14 @@ class ReportController extends Controller
             'delivery_performance' => $integratedData['distribution']['on_time_delivery'] ?? 0
         ];
 
+        // ✅ TRIGGER DAILY SUMMARY NOTIFICATION WHEN VIEWING INTEGRATED REPORT
+        if ($dateFrom === $dateTo && Carbon::parse($dateFrom)->isToday()) {
+            $this->notificationService->createDailySummary();
+        }
+
+        // ✅ CHECK OVERALL PERFORMANCE AND CREATE ALERTS
+        $this->checkOverallPerformanceAlerts($kpis, $dateFrom, $dateTo);
+
         // Trend data untuk charts
         $trendData = $this->getIntegratedTrendData($dateFrom, $dateTo);
 
@@ -272,6 +303,290 @@ class ReportController extends Controller
             'dateFrom',
             'dateTo'
         ));
+    }
+
+    // ========== ✅ NEW NOTIFICATION ALERT METHODS ==========
+
+    /**
+     * Check production performance and trigger alerts
+     */
+    private function checkProductionPerformanceAlerts($summary, $dateFrom, $dateTo)
+    {
+        try {
+            $efficiency = $summary['avg_efficiency'];
+            $defectRate = $summary['total_actual'] > 0 
+                ? round(($summary['total_defect'] / $summary['total_actual']) * 100, 2) 
+                : 0;
+            
+            // ✅ EFFICIENCY ALERTS
+            if ($efficiency < 70) {
+                $this->notificationService->createSystemNotification('low_efficiency_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'efficiency' => $efficiency,
+                    'total_batches' => $summary['total_batches'],
+                    'alert_level' => 'urgent'
+                ]);
+            } elseif ($efficiency < 80) {
+                $this->notificationService->createSystemNotification('efficiency_warning', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'efficiency' => $efficiency,
+                    'total_batches' => $summary['total_batches'],
+                    'alert_level' => 'warning'
+                ]);
+            }
+
+            // ✅ DEFECT RATE ALERTS  
+            if ($defectRate > 10) {
+                $this->notificationService->createSystemNotification('high_defect_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'defect_rate' => $defectRate,
+                    'total_defects' => $summary['total_defect'],
+                    'alert_level' => 'urgent'
+                ]);
+            }
+
+            // ✅ DOWNTIME ALERTS
+            $avgDowntimePerBatch = $summary['total_batches'] > 0 
+                ? round($summary['total_downtime'] / $summary['total_batches'], 2) 
+                : 0;
+                
+            if ($avgDowntimePerBatch > 60) { // More than 1 hour average downtime per batch
+                $this->notificationService->createSystemNotification('high_downtime_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'avg_downtime' => $avgDowntimePerBatch,
+                    'total_downtime' => $summary['total_downtime'],
+                    'alert_level' => 'high'
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to check production performance alerts', [
+                'error' => $e->getMessage(),
+                'summary' => $summary
+            ]);
+        }
+    }
+
+    /**
+     * Check quality performance and trigger alerts
+     */
+    private function checkQualityPerformanceAlerts($summary, $dateFrom, $dateTo)
+    {
+        try {
+            $passRate = $summary['pass_rate'];
+            $rejectionRate = $summary['total_inspections'] > 0 
+                ? round(($summary['rejected_count'] / $summary['total_inspections']) * 100, 2)
+                : 0;
+
+            // ✅ PASS RATE ALERTS
+            if ($passRate < 85) {
+                $this->notificationService->createSystemNotification('low_pass_rate_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'pass_rate' => $passRate,
+                    'total_inspections' => $summary['total_inspections'],
+                    'failed_count' => $summary['total_failed'],
+                    'alert_level' => 'urgent'
+                ]);
+            } elseif ($passRate < 90) {
+                $this->notificationService->createSystemNotification('pass_rate_warning', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'pass_rate' => $passRate,
+                    'total_inspections' => $summary['total_inspections'],
+                    'alert_level' => 'warning'
+                ]);
+            }
+
+            // ✅ HIGH REJECTION RATE ALERTS
+            if ($rejectionRate > 15) {
+                $this->notificationService->createSystemNotification('high_rejection_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'rejection_rate' => $rejectionRate,
+                    'rejected_count' => $summary['rejected_count'],
+                    'alert_level' => 'urgent'
+                ]);
+            }
+
+            // ✅ REWORK RATE ALERTS
+            $reworkRate = $summary['total_inspections'] > 0 
+                ? round(($summary['rework_count'] / $summary['total_inspections']) * 100, 2)
+                : 0;
+                
+            if ($reworkRate > 20) {
+                $this->notificationService->createSystemNotification('high_rework_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'rework_rate' => $reworkRate,
+                    'rework_count' => $summary['rework_count'],
+                    'alert_level' => 'high'
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to check quality performance alerts', [
+                'error' => $e->getMessage(),
+                'summary' => $summary
+            ]);
+        }
+    }
+
+    /**
+     * Check stock performance and trigger alerts
+     */
+    private function checkStockPerformanceAlerts($summary, $rawMaterials, $dateFrom, $dateTo)
+    {
+        try {
+            // ✅ LOW STOCK ALERTS
+            $lowStockCount = $summary['low_stock_materials'];
+            $totalMaterials = $summary['total_raw_materials'];
+            $lowStockPercentage = $totalMaterials > 0 ? round(($lowStockCount / $totalMaterials) * 100, 2) : 0;
+
+            if ($lowStockPercentage > 30) {
+                $this->notificationService->createSystemNotification('critical_stock_alert', [
+                    'low_stock_count' => $lowStockCount,
+                    'total_materials' => $totalMaterials,
+                    'low_stock_percentage' => $lowStockPercentage,
+                    'alert_level' => 'urgent'
+                ]);
+            } elseif ($lowStockPercentage > 20) {
+                $this->notificationService->createSystemNotification('stock_warning', [
+                    'low_stock_count' => $lowStockCount,
+                    'total_materials' => $totalMaterials,
+                    'low_stock_percentage' => $lowStockPercentage,
+                    'alert_level' => 'warning'
+                ]);
+            }
+
+            // ✅ STOCK TURNOVER ALERTS
+            $stockTurnover = $this->calculateStockTurnover($dateFrom, $dateTo);
+            if ($stockTurnover < 1) { // Very low turnover
+                $this->notificationService->createSystemNotification('low_stock_turnover_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'stock_turnover' => $stockTurnover,
+                    'alert_level' => 'warning'
+                ]);
+            }
+
+            // ✅ CHECK FOR SPECIFIC LOW STOCK MATERIALS
+            $criticalMaterials = $rawMaterials->filter(function($material) {
+                return $material->current_stock <= ($material->minimum_stock * 0.5); // Below 50% of minimum
+            });
+
+            foreach ($criticalMaterials as $material) {
+                $this->notificationService->createStockNotification($material, 'low_stock');
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to check stock performance alerts', [
+                'error' => $e->getMessage(),
+                'summary' => $summary
+            ]);
+        }
+    }
+
+    /**
+     * Check distribution performance and trigger alerts
+     */
+    private function checkDistributionPerformanceAlerts($summary, $distributions, $dateFrom, $dateTo)
+    {
+        try {
+            $onTimeDeliveryRate = $summary['total_distributions'] > 0 
+                ? round(($summary['delivered_count'] / $summary['total_distributions']) * 100, 2)
+                : 0;
+
+            // ✅ ON-TIME DELIVERY ALERTS
+            if ($onTimeDeliveryRate < 85) {
+                $this->notificationService->createSystemNotification('low_delivery_performance', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'delivery_rate' => $onTimeDeliveryRate,
+                    'total_distributions' => $summary['total_distributions'],
+                    'delivered_count' => $summary['delivered_count'],
+                    'alert_level' => 'urgent'
+                ]);
+            }
+
+            // ✅ HIGH CANCELLATION RATE ALERTS
+            $cancellationRate = $summary['total_distributions'] > 0 
+                ? round(($summary['cancelled_count'] / $summary['total_distributions']) * 100, 2)
+                : 0;
+                
+            if ($cancellationRate > 10) {
+                $this->notificationService->createSystemNotification('high_cancellation_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'cancellation_rate' => $cancellationRate,
+                    'cancelled_count' => $summary['cancelled_count'],
+                    'alert_level' => 'high'
+                ]);
+            }
+
+            // ✅ CHECK FOR DELAYED DISTRIBUTIONS
+            $delayedDistributions = $distributions->filter(function($distribution) {
+                if ($distribution->status === 'shipped') {
+                    $scheduledDate = Carbon::parse($distribution->distribution_date);
+                    return Carbon::now()->diffInDays($scheduledDate) > 2;
+                }
+                return false;
+            });
+
+            if ($delayedDistributions->count() > 0) {
+                $this->notificationService->createSystemNotification('delayed_distributions_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'delayed_count' => $delayedDistributions->count(),
+                    'alert_level' => 'high'
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to check distribution performance alerts', [
+                'error' => $e->getMessage(),
+                'summary' => $summary
+            ]);
+        }
+    }
+
+    /**
+     * Check overall performance across all modules
+     */
+    private function checkOverallPerformanceAlerts($kpis, $dateFrom, $dateTo)
+    {
+        try {
+            $overallScore = ($kpis['production_efficiency'] + $kpis['quality_pass_rate'] + $kpis['delivery_performance']) / 3;
+
+            // ✅ OVERALL PERFORMANCE ALERTS
+            if ($overallScore < 70) {
+                $this->notificationService->createSystemNotification('critical_performance_alert', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'overall_score' => round($overallScore, 2),
+                    'production_efficiency' => $kpis['production_efficiency'],
+                    'quality_pass_rate' => $kpis['quality_pass_rate'],
+                    'delivery_performance' => $kpis['delivery_performance'],
+                    'alert_level' => 'urgent'
+                ]);
+            } elseif ($overallScore < 80) {
+                $this->notificationService->createSystemNotification('performance_warning', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'overall_score' => round($overallScore, 2),
+                    'production_efficiency' => $kpis['production_efficiency'],
+                    'quality_pass_rate' => $kpis['quality_pass_rate'],
+                    'delivery_performance' => $kpis['delivery_performance'],
+                    'alert_level' => 'warning'
+                ]);
+            }
+
+            // ✅ EXCELLENT PERFORMANCE RECOGNITION
+            if ($overallScore > 95) {
+                $this->notificationService->createSystemNotification('excellent_performance', [
+                    'period' => "{$dateFrom} to {$dateTo}",
+                    'overall_score' => round($overallScore, 2),
+                    'achievement_level' => 'excellent',
+                    'alert_level' => 'normal'
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Failed to check overall performance alerts', [
+                'error' => $e->getMessage(),
+                'kpis' => $kpis
+            ]);
+        }
     }
 
     // ========== NEW HELPER METHODS FOR GENERATING DATA ==========
@@ -683,10 +998,10 @@ class ReportController extends Controller
         return $avgStockLevel > 0 ? round($totalStockOut / $avgStockLevel, 2) : 0;
     }
 
-    // ========== EXPORT METHODS (UNCHANGED) ==========
+    // ========== EXPORT METHODS WITH NOTIFICATION INTEGRATION ==========
     
     /**
-     * Export Production Report
+     * Export Production Report - ✅ WITH NOTIFICATION
      */
     public function exportProduction(Request $request, $format)
     {
@@ -698,6 +1013,16 @@ class ReportController extends Controller
                 ->whereBetween('production_date', [$dateFrom, $dateTo])
                 ->orderBy('production_date', 'desc')
                 ->get();
+
+            // ✅ TRIGGER EXPORT NOTIFICATION
+            $this->notificationService->createSystemNotification('report_exported', [
+                'report_type' => 'production',
+                'format' => $format,
+                'period' => "{$dateFrom} to {$dateTo}",
+                'record_count' => $productions->count(),
+                'exported_by' => auth()->user()->name,
+                'file_size' => $this->estimateFileSize($productions->count(), $format)
+            ]);
 
             if ($format === 'excel') {
                 return $this->exportToExcel($productions, 'production_report', $dateFrom, $dateTo);
@@ -711,12 +1036,20 @@ class ReportController extends Controller
                 'error' => $e->getMessage()
             ]);
 
+            // ✅ TRIGGER ERROR NOTIFICATION
+            $this->notificationService->createSystemNotification('report_export_failed', [
+                'report_type' => 'production',
+                'format' => $format,
+                'error_message' => $e->getMessage(),
+                'user' => auth()->user()->name
+            ]);
+
             return back()->with('error', 'Gagal export laporan produksi.');
         }
     }
 
     /**
-     * Export Quality Report
+     * Export Quality Report - ✅ WITH NOTIFICATION
      */
     public function exportQuality(Request $request, $format)
     {
@@ -728,6 +1061,15 @@ class ReportController extends Controller
                 ->whereBetween('inspection_date', [$dateFrom, $dateTo])
                 ->orderBy('inspection_date', 'desc')
                 ->get();
+
+            // ✅ TRIGGER EXPORT NOTIFICATION
+            $this->notificationService->createSystemNotification('report_exported', [
+                'report_type' => 'quality',
+                'format' => $format,
+                'period' => "{$dateFrom} to {$dateTo}",
+                'record_count' => $qualityControls->count(),
+                'exported_by' => auth()->user()->name
+            ]);
 
             if ($format === 'excel') {
                 return $this->exportToExcel($qualityControls, 'quality_report', $dateFrom, $dateTo);
@@ -741,12 +1083,19 @@ class ReportController extends Controller
                 'error' => $e->getMessage()
             ]);
 
+            // ✅ TRIGGER ERROR NOTIFICATION
+            $this->notificationService->createSystemNotification('report_export_failed', [
+                'report_type' => 'quality',
+                'format' => $format,
+                'error_message' => $e->getMessage()
+            ]);
+
             return back()->with('error', 'Gagal export laporan kualitas.');
         }
     }
 
     /**
-     * Export Stock Report
+     * Export Stock Report - ✅ WITH NOTIFICATION
      */
     public function exportStock(Request $request, $format)
     {
@@ -758,6 +1107,16 @@ class ReportController extends Controller
                 'raw_materials' => RawMaterial::where('is_active', true)->get(),
                 'movements' => $this->generateStockMovements($dateFrom, $dateTo)
             ];
+
+            // ✅ TRIGGER EXPORT NOTIFICATION
+            $this->notificationService->createSystemNotification('report_exported', [
+                'report_type' => 'stock',
+                'format' => $format,
+                'period' => "{$dateFrom} to {$dateTo}",
+                'material_count' => $stockData['raw_materials']->count(),
+                'movement_count' => $stockData['movements']->count(),
+                'exported_by' => auth()->user()->name
+            ]);
 
             if ($format === 'excel') {
                 return $this->exportToExcel($stockData, 'stock_report', $dateFrom, $dateTo);
@@ -771,12 +1130,19 @@ class ReportController extends Controller
                 'error' => $e->getMessage()
             ]);
 
+            // ✅ TRIGGER ERROR NOTIFICATION
+            $this->notificationService->createSystemNotification('report_export_failed', [
+                'report_type' => 'stock',
+                'format' => $format,
+                'error_message' => $e->getMessage()
+            ]);
+
             return back()->with('error', 'Gagal export laporan stok.');
         }
     }
 
     /**
-     * Export Distribution Report
+     * Export Distribution Report - ✅ WITH NOTIFICATION
      */
     public function exportDistribution(Request $request, $format)
     {
@@ -785,6 +1151,15 @@ class ReportController extends Controller
             $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
 
             $distributions = $this->generateDistributions($dateFrom, $dateTo);
+
+            // ✅ TRIGGER EXPORT NOTIFICATION
+            $this->notificationService->createSystemNotification('report_exported', [
+                'report_type' => 'distribution',
+                'format' => $format,
+                'period' => "{$dateFrom} to {$dateTo}",
+                'record_count' => $distributions->count(),
+                'exported_by' => auth()->user()->name
+            ]);
 
             if ($format === 'excel') {
                 return $this->exportToExcel($distributions, 'distribution_report', $dateFrom, $dateTo);
@@ -798,12 +1173,19 @@ class ReportController extends Controller
                 'error' => $e->getMessage()
             ]);
 
+            // ✅ TRIGGER ERROR NOTIFICATION
+            $this->notificationService->createSystemNotification('report_export_failed', [
+                'report_type' => 'distribution',
+                'format' => $format,
+                'error_message' => $e->getMessage()
+            ]);
+
             return back()->with('error', 'Gagal export laporan distribusi.');
         }
     }
 
     /**
-     * Export Integrated Report
+     * Export Integrated Report - ✅ WITH NOTIFICATION
      */
     public function exportIntegrated(Request $request, $format)
     {
@@ -818,6 +1200,15 @@ class ReportController extends Controller
                 'distribution' => $this->getIntegratedDistributionData($dateFrom, $dateTo)
             ];
 
+            // ✅ TRIGGER EXPORT NOTIFICATION FOR ADMIN LEVEL REPORT
+            $this->notificationService->createSystemNotification('integrated_report_exported', [
+                'format' => $format,
+                'period' => "{$dateFrom} to {$dateTo}",
+                'exported_by' => auth()->user()->name,
+                'modules_included' => ['production', 'quality', 'stock', 'distribution'],
+                'security_level' => 'admin_only'
+            ]);
+
             if ($format === 'excel') {
                 return $this->exportToExcel($integratedData, 'integrated_report', $dateFrom, $dateTo);
             } elseif ($format === 'pdf') {
@@ -830,7 +1221,37 @@ class ReportController extends Controller
                 'error' => $e->getMessage()
             ]);
 
+            // ✅ TRIGGER ERROR NOTIFICATION
+            $this->notificationService->createSystemNotification('report_export_failed', [
+                'report_type' => 'integrated',
+                'format' => $format,
+                'error_message' => $e->getMessage()
+            ]);
+
             return back()->with('error', 'Gagal export laporan terintegrasi.');
+        }
+    }
+
+    /**
+     * ✅ NEW METHOD: Estimate file size for notification
+     */
+    private function estimateFileSize($recordCount, $format)
+    {
+        $avgRecordSize = match($format) {
+            'excel' => 250, // bytes per record
+            'pdf' => 150,   // bytes per record
+            'csv' => 100,   // bytes per record
+            default => 150
+        };
+
+        $estimatedBytes = $recordCount * $avgRecordSize;
+        
+        if ($estimatedBytes > 1024 * 1024) {
+            return round($estimatedBytes / (1024 * 1024), 2) . ' MB';
+        } elseif ($estimatedBytes > 1024) {
+            return round($estimatedBytes / 1024, 2) . ' KB';
+        } else {
+            return $estimatedBytes . ' bytes';
         }
     }
 

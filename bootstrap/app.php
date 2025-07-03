@@ -1,6 +1,6 @@
 <?php
 // File: bootstrap/app.php
-// Bootstrap configuration untuk ProdCore
+// Bootstrap configuration untuk ProdCore - Updated untuk Mobile Support
 
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -24,9 +24,14 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\HandleCors::class,
         ]);
         
-        // Middleware untuk API routes
+        // Middleware untuk API routes - UPDATED UNTUK MOBILE
         $middleware->api(prepend: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+        ]);
+        
+        // Tambahkan CORS untuk API routes - PENTING UNTUK MOBILE
+        $middleware->api(append: [
+            \Illuminate\Http\Middleware\HandleCors::class,
         ]);
         
         // Trust all proxies (untuk load balancer jika ada)

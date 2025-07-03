@@ -17,7 +17,7 @@ use App\Models\User;
 use App\Models\Distribution;
 use App\Models\StockMovement;
 use App\Models\ProductionLine;
-use App\Helpers\ShiftHelper; // ✅ ADDED
+use App\Helpers\ShiftHelper;
 
 class DashboardController extends Controller
 {
@@ -30,15 +30,40 @@ class DashboardController extends Controller
     public function index()
     {
         $user = Auth::user();
+        
+        if (!$user || !$user->role) {
+            Log::error('Dashboard access without valid user/role');
+            return redirect()->route('login')->withErrors(['error' => 'Session tidak valid.']);
+        }
+        
         $role = $user->role->name;
 
-        return match($role) {
-            'admin' => redirect()->route('dashboard.admin'),
-            'operator' => redirect()->route('dashboard.operator'),
-            'qc' => redirect()->route('dashboard.qc'),
-            'gudang' => redirect()->route('dashboard.gudang'),
-            default => abort(403, 'Role tidak dikenali')
-        };
+        // Direct route mapping to prevent loops
+        $routes = [
+            'admin' => 'dashboard.admin',
+            'operator' => 'dashboard.operator', 
+            'qc' => 'dashboard.qc',
+            'gudang' => 'dashboard.gudang'
+        ];
+        
+        if (!isset($routes[$role])) {
+            Log::error('Unknown role in dashboard index', ['role' => $role, 'user_id' => $user->id]);
+            Auth::logout();
+            return redirect()->route('login')->withErrors(['error' => "Role '{$role}' tidak dikenali."]);
+        }
+        
+        $routeName = $routes[$role];
+        
+        // Verify route exists before redirect
+        if (!\Illuminate\Support\Facades\Route::has($routeName)) {
+            Log::error('Route does not exist', ['route' => $routeName, 'role' => $role]);
+            Auth::logout();
+            return redirect()->route('login')->withErrors(['error' => "Dashboard untuk role '{$role}' tidak tersedia."]);
+        }
+        
+        Log::info('Dashboard redirect', ['user_id' => $user->id, 'role' => $role, 'route' => $routeName]);
+        
+        return redirect()->route($routeName);
     }
 
     /**
@@ -50,7 +75,6 @@ class DashboardController extends Controller
             $stats = $this->getAdminStatistics();
             $chartData = $this->getAdminChartData();
             
-            // ✅ ADDED: Pass current shift to view
             $currentShift = ShiftHelper::getCurrentShift();
 
             return view('dashboard.admin', compact('stats', 'chartData', 'currentShift'));
@@ -61,7 +85,7 @@ class DashboardController extends Controller
             return view('dashboard.admin', [
                 'stats' => $this->getFallbackStats(),
                 'chartData' => $this->getFallbackChartData(),
-                'currentShift' => ShiftHelper::getCurrentShift() // ✅ ADDED
+                'currentShift' => ShiftHelper::getCurrentShift()
             ])->with('warning', 'Menggunakan data sampel. Data real akan muncul setelah tersedia.');
         }
     }
@@ -78,7 +102,7 @@ class DashboardController extends Controller
                 'my_production_today' => $this->getOperatorProduction($operator->id),
                 'my_target_today' => $this->getOperatorTarget($operator->id),
                 'my_efficiency' => $this->getOperatorEfficiency($operator->id),
-                'current_shift' => ShiftHelper::getCurrentShift(), // ✅ FIXED
+                'current_shift' => ShiftHelper::getCurrentShift(),
                 'active_productions' => $this->getActiveProductions($operator->id)
             ];
 
@@ -113,7 +137,7 @@ class DashboardController extends Controller
                 'failed_items_today' => $this->getFailedItemsToday(),
                 'pending_inspections' => $this->getPendingInspections(),
                 'avg_pass_rate_week' => $this->getWeeklyPassRate(),
-                'current_shift' => ShiftHelper::getCurrentShift() // ✅ ADDED
+                'current_shift' => ShiftHelper::getCurrentShift()
             ];
 
             $recentInspections = QualityControl::with(['production.productType', 'inspector'])
@@ -136,7 +160,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Dashboard Gudang
+     * Dashboard Gudang - FIXED VERSION
      */
     public function gudang()
     {
@@ -148,7 +172,7 @@ class DashboardController extends Controller
                 'distributions_today' => Distribution::whereDate('distribution_date', now())->count(),
                 'pending_shipments' => Distribution::whereIn('status', ['prepared', 'loading', 'shipped'])->count(),
                 'movements_today' => StockMovement::whereDate('transaction_date', now())->count(),
-                'current_shift' => ShiftHelper::getCurrentShift() // ✅ ADDED
+                'current_shift' => ShiftHelper::getCurrentShift()
             ];
 
             $recentMovements = StockMovement::with('user')
@@ -157,21 +181,38 @@ class DashboardController extends Controller
                 ->get();
 
             $lowStockItems = RawMaterial::whereRaw('current_stock <= minimum_stock')
+                ->where('is_active', true)
                 ->orderBy('current_stock', 'asc')
                 ->limit(5)
                 ->get();
 
-            $chartData = [
-                'stock_movement_trend' => $this->getStockMovementTrend(),
-                'material_usage' => $this->getMaterialUsage(),
-                'distribution_status' => $this->getDistributionStatus()
-            ];
+            // Get chart data with error handling
+            try {
+                $chartData = [
+                    'stock_movement_trend' => $this->getStockMovementTrend(),
+                    'material_usage' => $this->getMaterialUsage(),
+                    'distribution_status' => $this->getDistributionStatus()
+                ];
+            } catch (\Exception $e) {
+                Log::error('Chart data error in gudang dashboard: ' . $e->getMessage());
+                $chartData = [
+                    'stock_movement_trend' => $this->getDefaultMovementData(),
+                    'material_usage' => $this->getDefaultUsageData(),
+                    'distribution_status' => $this->getDefaultDistributionData()
+                ];
+            }
 
             return view('dashboard.gudang', compact('stats', 'recentMovements', 'lowStockItems', 'chartData'));
             
         } catch (\Exception $e) {
             Log::error('Gudang dashboard error: ' . $e->getMessage());
-            return back()->with('error', 'Terjadi kesalahan saat memuat dashboard gudang.');
+            
+            return view('dashboard.gudang', [
+                'stats' => $this->getFallbackGudangStats(),
+                'recentMovements' => collect(),
+                'lowStockItems' => collect(),
+                'chartData' => $this->getFallbackChartData()
+            ])->with('warning', 'Menggunakan data sampel. Data real akan muncul setelah tersedia.');
         }
     }
 
@@ -265,7 +306,7 @@ class DashboardController extends Controller
                 'pending_distributions' => Distribution::whereIn('status', ['prepared', 'loading'])->count(),
                 'total_users' => User::where('status', 'active')->count(),
                 'total_raw_materials' => RawMaterial::where('is_active', true)->count(),
-                'current_shift' => ShiftHelper::getCurrentShift() // ✅ ADDED
+                'current_shift' => ShiftHelper::getCurrentShift()
             ];
         });
     }
@@ -383,8 +424,6 @@ class DashboardController extends Controller
             ? round(($stats->total_actual / $stats->total_target) * 100, 2) 
             : 0;
     }
-
-    // ✅ REMOVED OLD getCurrentShift() method - now using ShiftHelper
 
     private function getActiveProductions($operatorId)
     {
@@ -554,7 +593,7 @@ class DashboardController extends Controller
             ->get();
     }
 
-    // ========== GUDANG METHODS ==========
+    // ========== GUDANG METHODS - FIXED ==========
 
     private function getStockMovementTrend()
     {
@@ -587,18 +626,21 @@ class DashboardController extends Controller
         return $data;
     }
 
+    /**
+     * FIXED: getMaterialUsage method - replaced 'usage' with 'material_usage'
+     */
     private function getMaterialUsage()
     {
         return RawMaterial::select('name')
             ->selectRaw('
-                COALESCE(SUM(CASE WHEN stock_movements.movement_type = "out" THEN stock_movements.quantity ELSE 0 END), 0) as usage
-            ')
+                COALESCE(SUM(CASE WHEN stock_movements.movement_type = ? THEN stock_movements.quantity ELSE 0 END), 0) as material_usage
+            ', ['out'])
             ->leftJoin('stock_movements', function($join) {
                 $join->on('raw_materials.id', '=', 'stock_movements.item_id')
                      ->where('stock_movements.item_type', '=', 'App\\Models\\RawMaterial');
             })
             ->groupBy('raw_materials.id', 'raw_materials.name')
-            ->orderBy('usage', 'desc')
+            ->orderBy('material_usage', 'desc')
             ->limit(10)
             ->get();
     }
@@ -620,7 +662,7 @@ class DashboardController extends Controller
             'my_production_today' => $this->getOperatorProduction($operatorId),
             'my_target_today' => $this->getOperatorTarget($operatorId),
             'my_efficiency' => $this->getOperatorEfficiency($operatorId),
-            'current_shift' => ShiftHelper::getCurrentShift() // ✅ FIXED
+            'current_shift' => ShiftHelper::getCurrentShift()
         ];
     }
 
@@ -631,22 +673,75 @@ class DashboardController extends Controller
             'pass_rate_today' => $this->getTodayPassRate(),
             'failed_items_today' => $this->getFailedItemsToday(),
             'pending_inspections' => $this->getPendingInspections(),
-            'current_shift' => ShiftHelper::getCurrentShift() // ✅ ADDED
+            'current_shift' => ShiftHelper::getCurrentShift()
         ];
     }
 
     private function getGudangStatsForApi()
     {
         return [
+            'total_raw_materials' => RawMaterial::where('is_active', true)->count(),
             'low_stock_alerts' => RawMaterial::whereRaw('current_stock <= minimum_stock')->count(),
             'stock_value' => RawMaterial::sum(DB::raw('current_stock * unit_price')),
             'distributions_today' => Distribution::whereDate('distribution_date', now())->count(),
             'movements_today' => StockMovement::whereDate('transaction_date', now())->count(),
-            'current_shift' => ShiftHelper::getCurrentShift() // ✅ ADDED
+            'current_shift' => ShiftHelper::getCurrentShift()
         ];
     }
 
-    // ========== FALLBACK DATA ==========
+    // ========== FALLBACK DATA METHODS - ENHANCED ==========
+
+    private function getFallbackGudangStats()
+    {
+        return [
+            'total_raw_materials' => 10,
+            'low_stock_alerts' => 3,
+            'stock_value' => 50000000,
+            'distributions_today' => 0,
+            'pending_shipments' => 2,
+            'movements_today' => 5,
+            'current_shift' => ShiftHelper::getCurrentShift()
+        ];
+    }
+
+    private function getDefaultMovementData()
+    {
+        $data = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $date = Carbon::today()->subDays($i);
+            $data[] = [
+                'date' => $date->format('Y-m-d'),
+                'day' => $date->format('D'),
+                'stock_in' => rand(500, 1000),
+                'stock_out' => rand(300, 800)
+            ];
+        }
+        return $data;
+    }
+
+    private function getDefaultUsageData()
+    {
+        return [
+            ['name' => 'Serbuk Logam Tembaga', 'material_usage' => 1250],
+            ['name' => 'Resin Phenolic', 'material_usage' => 980],
+            ['name' => 'Serat Aramid', 'material_usage' => 750],
+            ['name' => 'Serbuk Besi', 'material_usage' => 1100],
+            ['name' => 'Graphite Powder', 'material_usage' => 420],
+            ['name' => 'Ceramic Filler', 'material_usage' => 380],
+            ['name' => 'Steel Wool', 'material_usage' => 290],
+            ['name' => 'Rubber Binder', 'material_usage' => 180]
+        ];
+    }
+
+    private function getDefaultDistributionData()
+    {
+        return [
+            ['status' => 'prepared', 'count' => 5],
+            ['status' => 'loading', 'count' => 3],
+            ['status' => 'shipped', 'count' => 8],
+            ['status' => 'delivered', 'count' => 12]
+        ];
+    }
 
     private function getFallbackStats()
     {
@@ -660,7 +755,7 @@ class DashboardController extends Controller
             'pending_distributions' => 2,
             'total_users' => 8,
             'total_raw_materials' => 10,
-            'current_shift' => ShiftHelper::getCurrentShift() // ✅ ADDED
+            'current_shift' => ShiftHelper::getCurrentShift()
         ];
     }
 
@@ -685,7 +780,10 @@ class DashboardController extends Controller
                 ['name' => 'Resin Phenolic', 'current_stock' => 800, 'minimum_stock' => 100],
                 ['name' => 'Serat Aramid', 'current_stock' => 250, 'minimum_stock' => 50],
                 ['name' => 'Ceramic Filler', 'current_stock' => 450, 'minimum_stock' => 80]
-            ])
+            ]),
+            'stock_movement_trend' => $this->getDefaultMovementData(),
+            'material_usage' => $this->getDefaultUsageData(),
+            'distribution_status' => $this->getDefaultDistributionData()
         ];
     }
 
@@ -702,4 +800,4 @@ class DashboardController extends Controller
         }
         return $data;
     }
-} 
+}

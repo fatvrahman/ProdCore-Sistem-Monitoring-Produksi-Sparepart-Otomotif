@@ -7,6 +7,7 @@ use App\Models\QualityControl;
 use App\Models\Production;
 use App\Models\User;
 use App\Models\ProductType;
+use App\Services\NotificationService; // ✅ ADDED
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,16 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class QualityControlController extends Controller
 {
+    protected $notificationService; // ✅ ADDED
+
+    /**
+     * Constructor - Inject NotificationService
+     */
+    public function __construct(NotificationService $notificationService) // ✅ ADDED
+    {
+        $this->notificationService = $notificationService;
+    }
+
     /**
      * Inspection criteria configuration
      */
@@ -215,6 +226,24 @@ class QualityControlController extends Controller
                 'notes' => $this->generateInspectionNotes($request, $finalStatus)
             ]);
 
+            // ✅ TRIGGER QC NOTIFICATIONS
+            $this->notificationService->createQCNotification($qualityControl, 'inspection_completed');
+
+            // ✅ TRIGGER STATUS-SPECIFIC NOTIFICATIONS
+            switch ($finalStatus) {
+                case 'approved':
+                    $this->notificationService->createQCNotification($qualityControl, 'quality_passed');
+                    break;
+                    
+                case 'rejected':
+                    $this->notificationService->createQCNotification($qualityControl, 'quality_failed');
+                    break;
+                    
+                case 'rework':
+                    $this->notificationService->createQCNotification($qualityControl, 'rework_required');
+                    break;
+            }
+
             // Update production status berdasarkan hasil QC
             $this->updateProductionStatus($request->production_id, $finalStatus);
 
@@ -225,7 +254,8 @@ class QualityControlController extends Controller
             DB::commit();
 
             return redirect()->route('quality-controls.show', $qualityControl)
-                ->with('success', 'Inspeksi quality control berhasil dibuat dengan status: ' . strtoupper($finalStatus));
+                ->with('success', 'Inspeksi quality control berhasil dibuat dengan status: ' . strtoupper($finalStatus))
+                ->with('trigger_update', true); // ✅ SIGNAL FOR FRONTEND UPDATE
 
         } catch (\Exception $e) {
             DB::rollback();
@@ -365,6 +395,9 @@ class QualityControlController extends Controller
 
         DB::beginTransaction();
         try {
+            // Store old status for comparison
+            $oldStatus = $qualityControl->final_status;
+
             // Determine final status
             $finalStatus = $this->determineFinalStatus(
                 $request->test_results,
@@ -388,6 +421,25 @@ class QualityControlController extends Controller
                 'notes' => $request->notes
             ]);
 
+            // ✅ TRIGGER NOTIFICATIONS IF STATUS CHANGED
+            if ($oldStatus !== $finalStatus) {
+                $this->notificationService->createQCNotification($qualityControl, 'inspection_completed');
+                
+                switch ($finalStatus) {
+                    case 'approved':
+                        $this->notificationService->createQCNotification($qualityControl, 'quality_passed');
+                        break;
+                        
+                    case 'rejected':
+                        $this->notificationService->createQCNotification($qualityControl, 'quality_failed');
+                        break;
+                        
+                    case 'rework':
+                        $this->notificationService->createQCNotification($qualityControl, 'rework_required');
+                        break;
+                }
+            }
+
             // Update production status
             $this->updateProductionStatus($qualityControl->production_id, $finalStatus);
 
@@ -398,7 +450,8 @@ class QualityControlController extends Controller
             DB::commit();
 
             return redirect()->route('quality-controls.show', $qualityControl)
-                ->with('success', 'Inspeksi quality control berhasil diperbarui');
+                ->with('success', 'Inspeksi quality control berhasil diperbarui')
+                ->with('trigger_update', true); // ✅ SIGNAL FOR FRONTEND UPDATE
 
         } catch (\Exception $e) {
             DB::rollback();
@@ -406,6 +459,119 @@ class QualityControlController extends Controller
             return back()->withErrors([
                 'error' => 'Terjadi kesalahan: ' . $e->getMessage()
             ])->withInput();
+        }
+    }
+
+    /**
+     * ✅ NEW METHOD: Update inspection status only via API
+     */
+    public function updateStatus(Request $request, QualityControl $qualityControl)
+    {
+        $validated = $request->validate([
+            'final_status' => 'required|in:pending,approved,rejected,rework',
+            'defect_category' => 'nullable|string',
+            'defect_description' => 'nullable|string',
+            'corrective_action' => 'nullable|string',
+            'notes' => 'nullable|string'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $oldStatus = $qualityControl->final_status;
+            
+            // Update QC status
+            $qualityControl->update(array_filter($validated));
+
+            // ✅ TRIGGER STATUS-BASED NOTIFICATIONS
+            if ($oldStatus !== $validated['final_status']) {
+                switch ($validated['final_status']) {
+                    case 'approved':
+                        $this->notificationService->createQCNotification($qualityControl, 'quality_passed');
+                        break;
+                        
+                    case 'rejected':
+                        $this->notificationService->createQCNotification($qualityControl, 'quality_failed');
+                        break;
+                        
+                    case 'rework':
+                        $this->notificationService->createQCNotification($qualityControl, 'rework_required');
+                        break;
+                }
+                
+                // Update production status
+                $this->updateProductionStatus($qualityControl->production_id, $validated['final_status']);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true, 
+                'message' => 'Status inspeksi berhasil diperbarui',
+                'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memperbarui status inspeksi'
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ NEW METHOD: Require inspection for production
+     */
+    public function requireInspection(Request $request, Production $production)
+    {
+        $validated = $request->validate([
+            'priority' => 'nullable|in:normal,high,urgent'
+        ]);
+
+        try {
+            // Check if production already has QC
+            if ($production->qualityControls()->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Produksi ini sudah memiliki inspeksi QC'
+                ], 400);
+            }
+
+            // Create placeholder QC record for tracking
+            $qualityControl = QualityControl::create([
+                'inspection_number' => $this->generateInspectionNumber(),
+                'production_id' => $production->id,
+                'qc_inspector_id' => null, // Will be assigned when inspection starts
+                'inspection_date' => Carbon::today(),
+                'sample_size' => 0,
+                'passed_quantity' => 0,
+                'failed_quantity' => 0,
+                'inspection_criteria' => [],
+                'test_results' => [],
+                'final_status' => 'pending',
+                'notes' => 'Menunggu inspeksi dari QC team'
+            ]);
+
+            // ✅ TRIGGER INSPECTION REQUIRED NOTIFICATION
+            $this->notificationService->createQCNotification($qualityControl, 'inspection_required');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Permintaan inspeksi berhasil dibuat',
+                'data' => [
+                    'inspection_number' => $qualityControl->inspection_number,
+                    'qc_id' => $qualityControl->id
+                ],
+                'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat permintaan inspeksi'
+            ], 500);
         }
     }
 
@@ -504,7 +670,8 @@ class QualityControlController extends Controller
         return response()->json([
             'success' => true,
             'data' => $data,
-            'timestamp' => now()->toISOString()
+            'timestamp' => now()->toISOString(),
+            'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
         ]);
     }
 
@@ -535,7 +702,8 @@ class QualityControlController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $data
+            'data' => $data,
+            'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
         ]);
     }
 
@@ -560,7 +728,8 @@ class QualityControlController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $data
+            'data' => $data,
+            'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
         ]);
     }
 
@@ -602,7 +771,8 @@ class QualityControlController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $data
+            'data' => $data,
+            'trigger_update' => true // ✅ SIGNAL FOR FRONTEND UPDATE
         ]);
     }
 

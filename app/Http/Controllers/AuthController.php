@@ -1,25 +1,25 @@
 <?php
-// File: app/Http/Controllers/AuthController.php
 
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Route;
 use App\Models\User;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
     /**
-     * Tampilkan halaman login
+     * Show login form
      */
     public function showLogin()
     {
-        // Jika user sudah login, redirect ke dashboard berdasarkan role
+        // If already logged in, redirect to dashboard
         if (Auth::check()) {
             return $this->redirectBasedOnRole(Auth::user());
         }
@@ -28,380 +28,537 @@ class AuthController extends Controller
     }
 
     /**
-     * Proses login user dengan rate limiting dan security
+     * Handle login request
      */
     public function login(Request $request)
     {
-        // Rate limiting - maksimal 5 attempt per menit per IP
-        $key = 'login.attempts:' . $request->ip();
-        
-        if (RateLimiter::tooManyAttempts($key, 5)) {
-            $seconds = RateLimiter::availableIn($key);
-            
-            Log::warning('Too many login attempts', [
-                'ip' => $request->ip(),
-                'email' => $request->email,
-                'remaining_seconds' => $seconds
-            ]);
-            
-            throw ValidationException::withMessages([
-                'email' => ['Terlalu banyak percobaan login. Coba lagi dalam ' . ceil($seconds / 60) . ' menit.'],
-            ]);
-        }
-
-        // Validasi input dengan pesan Indonesia
-        $request->validate([
-            'email' => [
-                'required',
-                'email:rfc,dns',
-                'max:255'
-            ],
-            'password' => [
-                'required',
-                'string',
-                'min:6',
-                'max:255'
-            ]
+        // Validate input
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email',
+            'password' => 'required|min:6',
         ], [
-            'email.required' => 'Email harus diisi',
-            'email.email' => 'Format email tidak valid',
-            'email.max' => 'Email maksimal 255 karakter',
-            'password.required' => 'Password harus diisi',
-            'password.min' => 'Password minimal 6 karakter',
-            'password.max' => 'Password maksimal 255 karakter'
+            'email.required' => 'Email wajib diisi.',
+            'email.email' => 'Format email tidak valid.',
+            'password.required' => 'Password wajib diisi.',
+            'password.min' => 'Password minimal 6 karakter.',
         ]);
 
-        $credentials = $request->only('email', 'password');
-        $remember = $request->boolean('remember');
+        if ($validator->fails()) {
+            return back()
+                ->withErrors($validator)
+                ->withInput($request->only('email'));
+        }
 
-        // Coba melakukan autentikasi
+        // Get credentials
+        $credentials = $request->only('email', 'password');
+        $remember = $request->has('remember');
+
+        // Log login attempt
+        Log::info('Login attempt', [
+            'email' => $credentials['email'],
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent()
+        ]);
+
+        // Check if user exists and is active
+        $user = User::where('email', $credentials['email'])->first();
+        
+        if (!$user) {
+            Log::warning('Login failed - User not found', ['email' => $credentials['email']]);
+            return back()
+                ->withErrors(['email' => 'Email tidak terdaftar dalam sistem.'])
+                ->withInput($request->only('email'));
+        }
+
+        if ($user->status !== 'active') {
+            Log::warning('Login failed - User inactive', [
+                'email' => $credentials['email'],
+                'status' => $user->status
+            ]);
+            return back()
+                ->withErrors(['email' => 'Akun Anda sedang tidak aktif. Hubungi administrator.'])
+                ->withInput($request->only('email'));
+        }
+
+        // Attempt login
         if (Auth::attempt($credentials, $remember)) {
             $user = Auth::user();
             
-            // Clear rate limit setelah login berhasil
-            RateLimiter::clear($key);
-            
-            // Regenerate session untuk keamanan
-            $request->session()->regenerate();
-            
-            // Validasi tambahan setelah login berhasil
-            if (!$this->validateUserStatus($user)) {
-                Auth::logout();
-                $request->session()->invalidate();
-                $request->session()->regenerateToken();
-                
-                return back()->with('error', 'Akun Anda sedang tidak aktif atau bermasalah. Hubungi administrator.');
-            }
+            // Update last login
+            $user->update([
+                'last_login_at' => now()
+            ]);
 
-            // Update informasi login terakhir
-            $this->updateLastLoginInfo($user, $request);
-
-            // Log successful login untuk audit
+            // Log successful login
             Log::info('User login successful', [
                 'user_id' => $user->id,
                 'email' => $user->email,
-                'role' => $user->role->name,
+                'role' => $user->role->name ?? 'no_role',
                 'ip' => $request->ip(),
                 'user_agent' => $request->userAgent(),
-                'login_time' => now()
+                'login_time' => now()->format('Y-m-d H:i:s')
             ]);
 
-            // Redirect berdasarkan role dengan pesan welcome
+            // Regenerate session for security
+            $request->session()->regenerate();
+
+            // Redirect based on role
             return $this->redirectBasedOnRole($user);
-            
-        } else {
-            // Increment rate limit counter
-            RateLimiter::hit($key, 60);
-            
-            // Log failed login attempt
-            Log::warning('Login attempt failed', [
-                'email' => $request->email,
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'attempt_time' => now()
-            ]);
-
-            // Cek apakah email ada di database untuk memberikan pesan yang tepat
-            $user = User::where('email', $request->email)->first();
-            
-            if (!$user) {
-                $message = 'Email tidak terdaftar dalam sistem.';
-            } elseif ($user->status !== 'active') {
-                $message = 'Akun Anda sedang tidak aktif. Hubungi administrator.';
-            } else {
-                $message = 'Password yang Anda masukkan salah.';
-            }
-
-            return back()
-                ->withErrors(['email' => $message])
-                ->withInput($request->only('email'));
         }
+
+        // Login failed
+        Log::warning('Login failed - Invalid credentials', [
+            'email' => $credentials['email'],
+            'ip' => $request->ip()
+        ]);
+
+        return back()
+            ->withErrors(['email' => 'Email atau password tidak sesuai.'])
+            ->withInput($request->only('email'));
     }
 
     /**
-     * Logout user dengan pembersihan session lengkap
+     * Handle logout request
      */
     public function logout(Request $request)
     {
         $user = Auth::user();
         
-        // Log logout activity
         if ($user) {
             Log::info('User logout', [
                 'user_id' => $user->id,
                 'email' => $user->email,
-                'role' => $user->role->name,
-                'ip' => $request->ip(),
-                'logout_time' => now()
+                'logout_time' => now()->format('Y-m-d H:i:s')
             ]);
         }
 
-        // Perform logout
         Auth::logout();
         
-        // Invalidate and regenerate session
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-        
-        // Clear any remember me cookies
-        if ($request->hasCookie('remember_web_' . Str::slug(config('app.name')))) {
-            $cookie = cookie()->forget('remember_web_' . Str::slug(config('app.name')));
-            return redirect()->route('login')
-                ->with('success', 'Anda berhasil logout. Terima kasih!')
-                ->withCookie($cookie);
-        }
 
         return redirect()->route('login')
-            ->with('success', 'Anda berhasil logout. Terima kasih!');
+            ->with('success', 'Anda telah berhasil logout.');
     }
 
     /**
-     * API endpoint untuk mengecek status login
+     * ENHANCED: Redirect user based on role with improved error handling
      */
-    public function checkAuthStatus()
+    private function redirectBasedOnRole($user)
+    {
+        if (!$user->role) {
+            Log::error('User without role in redirectBasedOnRole', ['user_id' => $user->id]);
+            Auth::logout();
+            return redirect()->route('login')->withErrors(['error' => 'Role tidak valid.']);
+        }
+
+        $role = $user->role->name;
+        $welcomeMessage = $this->getWelcomeMessage($user);
+
+        // FIXED: Add debugging for role gudang
+        Log::info('Redirect attempt', ['user_id' => $user->id, 'role' => $role]);
+
+        // Direct route mapping to prevent loops
+        $routes = [
+            'admin' => 'dashboard.admin',
+            'operator' => 'dashboard.operator', 
+            'qc' => 'dashboard.qc',
+            'gudang' => 'dashboard.gudang'  // ✅ Ensure this exists
+        ];
+        
+        if (!isset($routes[$role])) {
+            Log::error('Unknown role in redirectBasedOnRole', ['role' => $role, 'user_id' => $user->id]);
+            Auth::logout();
+            return redirect()->route('login')->withErrors(['error' => "Role '{$role}' tidak dikenali."]);
+        }
+        
+        $routeName = $routes[$role];
+        
+        // ✅ CRITICAL: Verify route exists before redirect
+        if (!Route::has($routeName)) {
+            Log::error('Route does not exist', ['route' => $routeName, 'role' => $role]);
+            Auth::logout();
+            return redirect()->route('login')->withErrors(['error' => "Dashboard untuk role '{$role}' tidak tersedia."]);
+        }
+        
+        Log::info('Redirecting to dashboard', ['user_id' => $user->id, 'role' => $role, 'route' => $routeName]);
+        
+        return redirect()->route($routeName)->with('success', $welcomeMessage);
+    }
+
+    /**
+     * Generate welcome message based on user role and current shift
+     */
+    private function getWelcomeMessage($user)
+    {
+        $currentHour = now()->hour;
+        $greeting = '';
+        
+        if ($currentHour >= 5 && $currentHour < 10) {
+            $greeting = 'Selamat pagi';
+        } elseif ($currentHour >= 12 && $currentHour < 14) {
+            $greeting = 'Selamat siang';
+        } elseif ($currentHour >= 17 && $currentHour < 18) {
+            $greeting = 'Selamat sore';
+        } else {
+            $greeting = 'Selamat malam';
+        }
+
+        $role = $user->role->name;
+        $roleMessages = [
+            'admin' => 'Akses penuh sistem tersedia untuk Anda.',
+            'operator' => 'Siap untuk menjalankan produksi hari ini!',
+            'qc' => 'Mari pastikan kualitas produk tetap terjaga.',
+            'gudang' => 'Monitor stok dan kelola distribusi dengan efisien!'
+        ];
+
+        $roleMessage = $roleMessages[$role] ?? 'Selamat bekerja!';
+        
+        return "{$greeting}, {$user->name}! {$roleMessage}";
+    }
+
+    /**
+     * Show registration form (if needed for admin)
+     */
+    public function showRegister()
+    {
+        // Only allow if no users exist (initial setup) or admin is logged in
+        $userCount = User::count();
+        
+        if ($userCount > 0 && (!Auth::check() || Auth::user()->role->name !== 'admin')) {
+            return redirect()->route('login')
+                ->withErrors(['error' => 'Registrasi hanya dapat dilakukan oleh administrator.']);
+        }
+
+        return view('auth.register');
+    }
+
+    /**
+     * Handle registration (for initial setup or admin use)
+     */
+    public function register(Request $request)
+    {
+        // Validate input
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'password' => 'required|string|min:8|confirmed',
+            'employee_id' => 'required|string|max:20|unique:users',
+            'phone' => 'nullable|string|max:20',
+            'role_id' => 'required|exists:roles,id'
+        ], [
+            'name.required' => 'Nama lengkap wajib diisi.',
+            'email.required' => 'Email wajib diisi.',
+            'email.email' => 'Format email tidak valid.',
+            'email.unique' => 'Email sudah terdaftar.',
+            'password.required' => 'Password wajib diisi.',
+            'password.min' => 'Password minimal 8 karakter.',
+            'password.confirmed' => 'Konfirmasi password tidak sesuai.',
+            'employee_id.required' => 'ID Karyawan wajib diisi.',
+            'employee_id.unique' => 'ID Karyawan sudah terdaftar.',
+            'role_id.required' => 'Role wajib dipilih.',
+            'role_id.exists' => 'Role tidak valid.'
+        ]);
+
+        if ($validator->fails()) {
+            return back()
+                ->withErrors($validator)
+                ->withInput($request->except('password', 'password_confirmation'));
+        }
+
+        try {
+            // Create user
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'employee_id' => $request->employee_id,
+                'phone' => $request->phone,
+                'role_id' => $request->role_id,
+                'status' => 'active'
+            ]);
+
+            Log::info('New user registered', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'role_id' => $user->role_id,
+                'registered_by' => Auth::id() ?? 'system'
+            ]);
+
+            // If this is initial setup (no other users), auto login
+            if (User::count() === 1) {
+                Auth::login($user);
+                return $this->redirectBasedOnRole($user);
+            }
+
+            return redirect()->route('login')
+                ->with('success', 'Registrasi berhasil! Silakan login dengan akun Anda.');
+
+        } catch (\Exception $e) {
+            Log::error('Registration failed', [
+                'email' => $request->email,
+                'error' => $e->getMessage()
+            ]);
+
+            return back()
+                ->withErrors(['error' => 'Terjadi kesalahan saat registrasi. Silakan coba lagi.'])
+                ->withInput($request->except('password', 'password_confirmation'));
+        }
+    }
+
+    /**
+     * Handle password reset request
+     */
+    public function showForgotPassword()
+    {
+        return view('auth.forgot-password');
+    }
+
+    /**
+     * Send password reset link
+     */
+    public function sendResetLink(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:users,email'
+        ], [
+            'email.required' => 'Email wajib diisi.',
+            'email.email' => 'Format email tidak valid.',
+            'email.exists' => 'Email tidak terdaftar dalam sistem.'
+        ]);
+
+        if ($validator->fails()) {
+            return back()
+                ->withErrors($validator)
+                ->withInput($request->only('email'));
+        }
+
+        // For now, just log the reset request
+        // In production, you would send actual email
+        Log::info('Password reset requested', [
+            'email' => $request->email,
+            'ip' => $request->ip(),
+            'requested_at' => now()
+        ]);
+
+        return back()->with('status', 'Link reset password telah dikirim ke email Anda.');
+    }
+
+    /**
+     * Check if user session is valid
+     */
+    public function checkSession()
     {
         if (Auth::check()) {
             $user = Auth::user();
+            
+            // Check if user is still active
+            if ($user->status !== 'active') {
+                Auth::logout();
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Akun Anda telah dinonaktifkan.'
+                ]);
+            }
+
             return response()->json([
-                'authenticated' => true,
+                'valid' => true,
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
-                    'role' => $user->role->name,
-                    'role_display' => $user->role->display_name,
-                    'status' => $user->status,
-                    'last_login' => $user->last_login_at
+                    'role' => $user->role->name ?? null,
+                    'last_activity' => now()
                 ]
             ]);
         }
 
         return response()->json([
-            'authenticated' => false
+            'valid' => false,
+            'message' => 'Session expired'
         ]);
     }
 
     /**
-     * Refresh session untuk mencegah timeout
+     * Get current user info
      */
-    public function refreshSession(Request $request)
+    public function getCurrentUser()
     {
-        if (Auth::check()) {
-            $request->session()->regenerate();
-            
+        if (!Auth::check()) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        $user = Auth::user();
+        
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'employee_id' => $user->employee_id,
+            'role' => [
+                'id' => $user->role->id,
+                'name' => $user->role->name,
+                'display_name' => $user->role->display_name
+            ],
+            'permissions' => json_decode($user->role->permissions ?? '[]'),
+            'last_login_at' => $user->last_login_at,
+            'status' => $user->status
+        ]);
+    }
+
+    /**
+     * Update user profile
+     */
+    public function updateProfile(Request $request)
+    {
+        if (!Auth::check()) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        $user = Auth::user();
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:20',
+            'current_password' => 'required_with:new_password|current_password',
+            'new_password' => 'nullable|string|min:8|confirmed'
+        ], [
+            'name.required' => 'Nama lengkap wajib diisi.',
+            'current_password.current_password' => 'Password saat ini tidak sesuai.',
+            'new_password.min' => 'Password baru minimal 8 karakter.',
+            'new_password.confirmed' => 'Konfirmasi password baru tidak sesuai.'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $updateData = [
+                'name' => $request->name,
+                'phone' => $request->phone
+            ];
+
+            // Update password if provided
+            if ($request->filled('new_password')) {
+                $updateData['password'] = Hash::make($request->new_password);
+            }
+
+            $user->update($updateData);
+
+            Log::info('User profile updated', [
+                'user_id' => $user->id,
+                'updated_fields' => array_keys($updateData)
+            ]);
+
             return response()->json([
                 'success' => true,
-                'message' => 'Session refreshed',
-                'expires_at' => now()->addMinutes(config('session.lifetime'))
+                'message' => 'Profil berhasil diperbarui.',
+                'user' => [
+                    'name' => $user->name,
+                    'phone' => $user->phone
+                ]
             ]);
-        }
 
-        return response()->json([
-            'success' => false,
-            'message' => 'Unauthenticated'
-        ], 401);
-    }
-
-    /**
-     * Redirect user berdasarkan role dengan pesan yang tepat
-     */
-    private function redirectBasedOnRole($user)
-    {
-        $role = $user->role->name;
-        $welcomeMessage = $this->getWelcomeMessage($user);
-
-        return match($role) {
-            'admin' => redirect()->route('dashboard.admin')->with('success', $welcomeMessage),
-            'operator' => redirect()->route('dashboard.operator')->with('success', $welcomeMessage),
-            'qc' => redirect()->route('dashboard.qc')->with('success', $welcomeMessage),
-            'gudang' => redirect()->route('dashboard.gudang')->with('success', $welcomeMessage),
-            default => redirect()->route('dashboard')->with('success', 'Selamat datang di ProdCore!')
-        };
-    }
-
-    /**
-     * Generate pesan welcome yang personal
-     */
-    private function getWelcomeMessage($user)
-    {
-        $timeOfDay = $this->getTimeOfDay();
-        $roleName = $user->role->display_name;
-        
-        $messages = [
-            'pagi' => "Selamat pagi, {$user->name}! Siap untuk hari yang produktif sebagai {$roleName}? ☀️",
-            'siang' => "Selamat siang, {$user->name}! Semangat kerja sebagai {$roleName}! 🌞",
-            'sore' => "Selamat sore, {$user->name}! Mari lanjutkan tugas sebagai {$roleName}! 🌅",
-            'malam' => "Selamat malam, {$user->name}! Shift malam sebagai {$roleName} dimulai! 🌙"
-        ];
-
-        return $messages[$timeOfDay];
-    }
-
-    /**
-     * Tentukan waktu hari untuk greeting
-     */
-    private function getTimeOfDay()
-    {
-        $hour = now()->timezone('Asia/Jakarta')->hour;
-
-    if ($hour >= 7 && $hour < 15) {
-        return 'pagi'; // Shift Pagi: 07.00 - 14.59
-    } elseif ($hour >= 15 && $hour < 23) {
-        return 'siang'; // Shift Siang: 15.00 - 22.59
-    } else {
-        return 'malam'; // Shift Malam: 23.00 - 06.59
-    }
-}
-
-    /**
-     * Validasi status user setelah login
-     */
-    private function validateUserStatus($user)
-    {
-        // Cek status user
-        if ($user->status !== 'active') {
-            return false;
-        }
-
-        // Cek apakah role masih aktif
-        if (!$user->role || !$user->role->is_active) {
-            return false;
-        }
-
-        // Validasi tambahan bisa ditambahkan di sini
-        // Misalnya: cek kontrak kerja, cek departemen, dll
-        
-        return true;
-    }
-
-    /**
-     * Update informasi login terakhir
-     */
-    private function updateLastLoginInfo($user, $request)
-    {
-        try {
-            $user->update([
-                'last_login_at' => now(),
-                // Bisa tambahkan info lain seperti IP, device, dll jika diperlukan
-            ]);
         } catch (\Exception $e) {
-            // Log error tapi jangan gagalkan login
-            Log::error('Failed to update last login info', [
+            Log::error('Profile update failed', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage()
             ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat memperbarui profil.'
+            ], 500);
         }
     }
 
     /**
-     * Handle login untuk API (untuk mobile app nantinya)
+     * Change user password
      */
-    public function apiLogin(Request $request)
+    public function changePassword(Request $request)
     {
-        // Validasi input
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required'
-        ]);
-
-        // Rate limiting untuk API
-        $key = 'api.login.attempts:' . $request->ip();
-        
-        if (RateLimiter::tooManyAttempts($key, 10)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Terlalu banyak percobaan login. Coba lagi nanti.'
-            ], 429);
+        if (!Auth::check()) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        $credentials = $request->only('email', 'password');
+        $validator = Validator::make($request->all(), [
+            'current_password' => 'required|current_password',
+            'new_password' => 'required|string|min:8|confirmed'
+        ], [
+            'current_password.required' => 'Password saat ini wajib diisi.',
+            'current_password.current_password' => 'Password saat ini tidak sesuai.',
+            'new_password.required' => 'Password baru wajib diisi.',
+            'new_password.min' => 'Password baru minimal 8 karakter.',
+            'new_password.confirmed' => 'Konfirmasi password baru tidak sesuai.'
+        ]);
 
-        if (Auth::attempt($credentials)) {
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
             $user = Auth::user();
-            
-            // Validasi status user
-            if (!$this->validateUserStatus($user)) {
-                Auth::logout();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Akun tidak aktif'
-                ], 401);
-            }
+            $user->update([
+                'password' => Hash::make($request->new_password)
+            ]);
 
-            // Generate token untuk mobile
-            $token = $user->createToken('mobile-app')->plainTextToken;
-            
-            // Update last login
-            $this->updateLastLoginInfo($user, $request);
-            
-            // Clear rate limit
-            RateLimiter::clear($key);
+            Log::info('User password changed', ['user_id' => $user->id]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Login berhasil',
-                'data' => [
-                    'user' => [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'email' => $user->email,
-                        'role' => $user->role->name,
-                        'role_display' => $user->role->display_name
-                    ],
-                    'token' => $token
-                ]
+                'message' => 'Password berhasil diubah.'
             ]);
-        } else {
-            // Increment rate limit
-            RateLimiter::hit($key, 60);
-            
+
+        } catch (\Exception $e) {
+            Log::error('Password change failed', [
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Email atau password salah'
-            ], 401);
+                'message' => 'Terjadi kesalahan saat mengubah password.'
+            ], 500);
         }
     }
 
     /**
-     * Logout API
+     * Get authentication statistics (for admin)
      */
-    public function apiLogout(Request $request)
+    public function getAuthStats()
     {
-        $user = $request->user();
-        
-        if ($user) {
-            // Revoke current token
-            $request->user()->currentAccessToken()->delete();
-            
-            Log::info('API logout', [
-                'user_id' => $user->id,
-                'ip' => $request->ip()
-            ]);
+        if (!Auth::check() || Auth::user()->role->name !== 'admin') {
+            return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Logout berhasil'
-        ]);
+        try {
+            $stats = [
+                'total_users' => User::count(),
+                'active_users' => User::where('status', 'active')->count(),
+                'users_logged_in_today' => User::whereDate('last_login_at', today())->count(),
+                'users_by_role' => User::join('roles', 'users.role_id', '=', 'roles.id')
+                    ->selectRaw('roles.display_name as role_name, COUNT(*) as count')
+                    ->groupBy('roles.id', 'roles.display_name')
+                    ->get(),
+                'recent_logins' => User::with('role')
+                    ->whereNotNull('last_login_at')
+                    ->orderBy('last_login_at', 'desc')
+                    ->limit(10)
+                    ->get(['id', 'name', 'email', 'last_login_at', 'role_id'])
+            ];
+
+            return response()->json($stats);
+
+        } catch (\Exception $e) {
+            Log::error('Auth stats error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to fetch auth stats'], 500);
+        }
     }
 }

@@ -444,48 +444,57 @@
             </div>
 
             <!-- Items -->
-            <div class="info-card">
-                <div class="info-card-header">
-                    <i class="fas fa-boxes"></i>
-                    Items Pengiriman ({{ count($distribution->items) }})
-                </div>
-                <div class="info-card-body p-0">
-                    <div class="items-table">
-                        @foreach($distribution->items as $item)
-                        @php
-                            $production = $distribution->productions()->where('id', $item['production_id'])->first();
-                        @endphp
-                        <div class="item-row">
-                            <div class="batch-info">
-                                <span class="batch-badge">{{ $item['batch_number'] }}</span>
-                                <div class="product-info">
-                                    <strong>{{ $item['product_name'] }}</strong>
-                                    @if($production && $production->productType)
-                                    <br><small class="text-muted">{{ $production->productType->brand }} - {{ $production->productType->model }}</small>
-                                    @endif
-                                </div>
-                                <div class="quantity-info">
-                                    <div class="text-success">{{ number_format($item['quantity']) }} pcs</div>
-                                    <small class="text-muted">{{ number_format($item['quantity'] * $item['unit_weight'], 1) }} kg</small>
-                                </div>
-                            </div>
-                            @if($production && $production->qualityControl)
-                            <div class="mt-2">
-                                <small class="text-muted">
-                                    <i class="fas fa-check-circle text-success me-1"></i>
-                                    QC: {{ ucfirst($production->qualityControl->final_status) }}
-                                    <span class="ms-2">
-                                        <i class="fas fa-calendar me-1"></i>
-                                        Produksi: {{ $production->production_date->format('d/m/Y') }}
-                                    </span>
-                                </small>
-                            </div>
-                            @endif
-                        </div>
-                        @endforeach
+<div class="info-card">
+    <div class="info-card-header">
+        <i class="fas fa-boxes"></i>
+        Items Pengiriman ({{ count($distribution->items) }})
+    </div>
+    <div class="info-card-body p-0">
+        <div class="items-table">
+            @foreach($distribution->items as $item)
+            @php
+                // ✅ FIX: Use productionsData instead of productions() method
+                $production = isset($distribution->productionsData) 
+                    ? $distribution->productionsData->where('id', $item['production_id'])->first() 
+                    : null;
+            @endphp
+            <div class="item-row">
+                <div class="batch-info">
+                    <span class="batch-badge">{{ $item['batch_number'] }}</span>
+                    <div class="product-info">
+                        <strong>{{ $item['product_name'] }}</strong>
+                        @if($production && $production->productType)
+                        <br><small class="text-muted">{{ $production->productType->brand }} - {{ $production->productType->model }}</small>
+                        @endif
+                    </div>
+                    <div class="quantity-info">
+                        <div class="text-success">{{ number_format($item['quantity']) }} pcs</div>
+                        <small class="text-muted">{{ number_format($item['quantity'] * $item['unit_weight'], 1) }} kg</small>
                     </div>
                 </div>
+                @if($production)
+                <div class="mt-2">
+                    <small class="text-muted">
+                        @php
+                            // ✅ FIX: Use qualityControls (plural) instead of qualityControl
+                            $latestQC = $production->qualityControls ? $production->qualityControls->first() : null;
+                        @endphp
+                        @if($latestQC)
+                        <i class="fas fa-check-circle text-success me-1"></i>
+                        QC: {{ ucfirst($latestQC->final_status) }}
+                        @endif
+                        <span class="ms-2">
+                            <i class="fas fa-calendar me-1"></i>
+                            Produksi: {{ $production->production_date->format('d/m/Y') }}
+                        </span>
+                    </small>
+                </div>
+                @endif
             </div>
+            @endforeach
+        </div>
+    </div>
+</div>
 
             <!-- Stock Movements -->
             @if($stockMovements->count() > 0)

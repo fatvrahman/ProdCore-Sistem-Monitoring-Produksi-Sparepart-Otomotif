@@ -1245,10 +1245,18 @@
             const startTime = document.querySelector('input[name="start_time"]').value;
             const endTime = document.querySelector('input[name="end_time"]').value;
             
-            if (startTime && endTime && startTime >= endTime) {
-                showError('Waktu selesai harus lebih besar dari waktu mulai!');
-                return false;
-            }
+            if (startTime && endTime) {
+    // Hanya validasi jika bukan lintas hari
+    if (endTime > startTime) {
+        // Normal case - waktu akhir di hari yang sama dan lebih besar
+    } else if (endTime < startTime) {
+        // Cross-day case - waktu akhir di hari berikutnya (valid)
+    } else {
+        // endTime === startTime (tidak valid)
+        showError('Waktu selesai harus berbeda dari waktu mulai!');
+        return false; 
+    }
+}
             
             // Show confirmation before saving
             showConfirmation();

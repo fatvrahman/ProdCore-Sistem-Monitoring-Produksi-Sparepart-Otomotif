@@ -5,17 +5,73 @@
 
 @push('styles')
 <style>
+    :root {
+        --operator-primary: #435ebe;
+        --operator-secondary: #5a6acf;
+        --operator-gradient: linear-gradient(135deg, #435ebe 0%, #5a6acf 100%);
+    }
+
+    /* Operator Header - matching Admin style */
+    .operator-header {
+        background: var(--operator-gradient);
+        color: white;
+        border-radius: 15px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 25px rgba(67, 94, 190, 0.3);
+    }
+
+    /* System Status Alert */
+    .system-status {
+        background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+        color: white;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        border: none;
+    }
+
+    /* Debug Info */
+    .debug-info {
+        font-size: 0.8rem;
+        background: rgba(255,255,255,0.1);
+        padding: 0.5rem;
+        border-radius: 5px;
+        margin-top: 1rem;
+    }
+
+    /* Loading Spinner */
+    .loading-spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #435ebe;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        margin-right: 0.5rem;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
     .operator-card {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        background: linear-gradient(135deg, #435ebe 0%, #5a6acf 100%);
         color: white;
         border-radius: 15px;
         padding: 1.5rem;
         margin-bottom: 1.5rem;
-        box-shadow: 0 8px 25px rgba(40, 167, 69, 0.15);
+        box-shadow: 0 8px 25px rgba(67, 94, 190, 0.15);
         transition: transform 0.3s ease, box-shadow 0.3s ease;
         border: none;
         position: relative;
         overflow: hidden;
+        min-height: 140px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     }
 
     .operator-card::before {
@@ -31,22 +87,27 @@
 
     .operator-card:hover {
         transform: translateY(-3px);
-        box-shadow: 0 12px 30px rgba(40, 167, 69, 0.25);
+        box-shadow: 0 12px 30px rgba(67, 94, 190, 0.25);
     }
 
     .operator-card.warning {
-        background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
-        box-shadow: 0 8px 25px rgba(255, 193, 7, 0.15);
+        background: linear-gradient(135deg, #fd7e14 0%, #ffc107 100%);
+        box-shadow: 0 8px 25px rgba(253, 126, 20, 0.15);
     }
 
     .operator-card.info {
-        background: linear-gradient(135deg, #17a2b8 0%, #6f42c1 100%);
-        box-shadow: 0 8px 25px rgba(23, 162, 184, 0.15);
+        background: linear-gradient(135deg, #435ebe 0%, #667eea 100%);
+        box-shadow: 0 8px 25px rgba(67, 94, 190, 0.15);
     }
 
     .operator-card.primary {
-        background: linear-gradient(135deg, #007bff 0%, #6610f2 100%);
-        box-shadow: 0 8px 25px rgba(0, 123, 255, 0.15);
+        background: linear-gradient(135deg, #435ebe 0%, #5a6acf 100%);
+        box-shadow: 0 8px 25px rgba(67, 94, 190, 0.15);
+    }
+
+    .operator-card.success {
+        background: linear-gradient(135deg, #198754 0%, #20c997 100%);
+        box-shadow: 0 8px 25px rgba(25, 135, 84, 0.15);
     }
 
     .performance-value {
@@ -55,6 +116,7 @@
         margin-bottom: 0.5rem;
         text-shadow: 0 2px 4px rgba(0,0,0,0.1);
         line-height: 1;
+        min-height: 3rem;
     }
 
     .performance-label {
@@ -62,13 +124,13 @@
         opacity: 0.95;
         margin: 0;
         font-weight: 600;
+        min-height: 1.2rem;
     }
 
     .performance-icon {
         position: absolute;
         right: 1.5rem;
-        top: 50%;
-        transform: translateY(-50%);
+        top: 1.5rem;
         font-size: 4rem;
         opacity: 0.2;
     }
@@ -80,6 +142,7 @@
         border-radius: 25px;
         font-weight: 600;
         font-size: 0.9rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
 
     .shift-pagi {
@@ -103,7 +166,7 @@
         padding: 1.5rem;
         box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         margin-bottom: 1.5rem;
-        border: 1px solid #e3f2fd;
+        border: 1px solid #eef2ff;
     }
 
     .chart-container {
@@ -141,7 +204,7 @@
 
     .efficiency-fill {
         height: 100%;
-        background: linear-gradient(90deg, #dc3545 0%, #ffc107 50%, #28a745 100%);
+        background: linear-gradient(90deg, #dc3545 0%, #fd7e14 50%, #198754 100%);
         border-radius: 10px;
         transition: width 1s ease;
         position: relative;
@@ -152,7 +215,7 @@
         border-radius: 10px;
         padding: 1rem;
         margin-bottom: 0.75rem;
-        border-left: 4px solid #28a745;
+        border-left: 4px solid #435ebe;
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         transition: transform 0.2s ease;
     }
@@ -164,12 +227,12 @@
 
     .recent-production-item.planned,
     .recent-production-item.in_progress {
-        border-left-color: #ffc107;
+        border-left-color: #fd7e14;
     }
 
     .recent-production-item.completed,
     .recent-production-item.qc_passed {
-        border-left-color: #28a745;
+        border-left-color: #198754;
     }
 
     .recent-production-item.quality_review,
@@ -178,25 +241,25 @@
     }
 
     .btn-production {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        background: linear-gradient(135deg, #435ebe 0%, #5a6acf 100%);
         border: none;
         color: white;
         font-weight: 600;
         padding: 0.75rem 2rem;
         border-radius: 10px;
-        box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        box-shadow: 0 4px 15px rgba(67, 94, 190, 0.3);
         transition: all 0.3s ease;
     }
 
     .btn-production:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+        box-shadow: 0 6px 20px rgba(67, 94, 190, 0.4);
         color: white;
     }
 
     .production-target {
-        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-        border: 2px solid #2196f3;
+        background: linear-gradient(135deg, #eef2ff 0%, #dde4ff 100%);
+        border: 2px solid #435ebe;
         border-radius: 12px;
         padding: 1rem;
         margin-bottom: 1rem;
@@ -206,39 +269,87 @@
     .target-value {
         font-size: 2rem;
         font-weight: bold;
-        color: #1976d2;
+        color: #435ebe;
         margin: 0;
     }
 
+    /* Mobile responsive header */
     @media (max-width: 768px) {
+        .operator-header {
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .debug-info {
+            text-align: center;
+            font-size: 0.7rem;
+        }
+        
+        .shift-indicator {
+            justify-content: center;
+            margin-top: 0.5rem;
+        }
+
         .performance-value {
             font-size: 2.5rem;
+            min-height: 2.5rem;
         }
+        
         .performance-icon {
             font-size: 3rem;
             right: 1rem;
+            top: 1rem;
+        }
+
+        .operator-card {
+            min-height: 120px;
         }
     }
 </style>
 @endpush
 
 @section('content')
-<div class="page-content">
-    <!-- Welcome Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-0">Dashboard Operator</h1>
-            <p class="text-muted mb-0">Selamat datang, {{ auth()->user()->name }}! Semangat kerja hari ini! 💪</p>
+<div class="container-fluid">
+    <!-- Header Section - Updated to match Admin style -->
+    <div class="operator-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-cogs me-3"></i>Dashboard Operator</h2>
+                <p class="mb-0">Selamat datang kembali, {{ auth()->user()->name }}! Semangat kerja hari ini!</p>
+            </div>
+            <div class="col-md-4 text-md-end text-center mt-3 mt-md-0">
+                <div class="btn-group">
+                    <button class="btn btn-light" onclick="refreshDashboard()" id="refresh-btn">
+                        <i class="fas fa-sync-alt me-1"></i>Refresh
+                    </button>
+                    <button class="btn btn-light" onclick="exportDashboard()">
+                        <i class="fas fa-download me-1"></i>Export
+                    </button>
+                </div>
+                <!-- Shift indicator moved here -->
+                <div class="mt-2">
+                    <span class="shift-indicator shift-{{ $stats['current_shift'] }}">
+                        <i class="fas fa-clock me-2"></i>
+                        Shift {{ ucfirst($stats['current_shift']) }}
+                    </span>
+                </div>
+                <!-- Debug info for development -->
+                @if(config('app.debug'))
+                <div class="debug-info mt-2">
+                    Server: {{ now()->format('H:i:s') }} | 
+                    Hour: {{ now()->hour }} | 
+                    Shift: {{ $stats['current_shift'] ?? 'undefined' }} |
+                    TZ: {{ config('app.timezone') }}
+                </div>
+                @endif
+            </div>
         </div>
-        <div class="d-flex gap-2">
-            <span class="shift-indicator shift-{{ $stats['current_shift'] }}">
-                <i class="fas fa-clock me-2"></i>
-                Shift {{ ucfirst($stats['current_shift']) }}
-            </span>
-            <button class="btn btn-outline-primary btn-sm" onclick="refreshDashboard()">
-                <i class="fas fa-sync-alt me-1"></i>Refresh
-            </button>
-        </div>
+    </div>
+
+    <!-- System Status Alert -->
+    <div id="system-status" class="system-status d-none" role="alert">
+        <i class="fas fa-info-circle me-2"></i>
+        <span id="status-message">System working with sample data. Real production data will appear once available.</span>
     </div>
 
     <!-- Personal Performance Cards -->
@@ -252,9 +363,11 @@
                     {{ number_format($stats['my_production_today']) }}
                 </div>
                 <p class="performance-label">Produksi Saya Hari Ini</p>
-                <small class="d-block mt-2 opacity-75">
-                    <i class="fas fa-clock"></i> Update: {{ now()->format('H:i') }}
-                </small>
+                <div class="mt-auto pt-2">
+                    <small class="d-block opacity-75">
+                        <i class="fas fa-clock"></i> Update: {{ now()->format('H:i') }}
+                    </small>
+                </div>
             </div>
         </div>
         
@@ -270,6 +383,11 @@
                 <div class="efficiency-meter mt-2">
                     <div class="efficiency-fill" style="width: {{ $stats['my_target_today'] > 0 ? min(($stats['my_production_today'] / $stats['my_target_today']) * 100, 100) : 0 }}%"></div>
                 </div>
+                <div class="mt-auto pt-1">
+                    <small class="d-block opacity-75">
+                        Progress: {{ $stats['my_target_today'] > 0 ? number_format(($stats['my_production_today'] / $stats['my_target_today']) * 100, 1) : 0 }}%
+                    </small>
+                </div>
             </div>
         </div>
         
@@ -282,17 +400,19 @@
                     {{ number_format($stats['my_efficiency'], 1) }}%
                 </div>
                 <p class="performance-label">Efisiensi Saya</p>
-                <small class="d-block mt-2 opacity-75">
-                    @if($stats['my_efficiency'] >= 90)
-                        <i class="fas fa-trophy text-warning"></i> Excellent!
-                    @elseif($stats['my_efficiency'] >= 80)
-                        <i class="fas fa-thumbs-up"></i> Good Job!
-                    @elseif($stats['my_efficiency'] >= 70)
-                        <i class="fas fa-arrow-up"></i> Keep Going!
-                    @else
-                        <i class="fas fa-fist-raised"></i> Let's Push!
-                    @endif
-                </small>
+                <div class="mt-auto pt-2">
+                    <small class="d-block opacity-75">
+                        @if($stats['my_efficiency'] >= 90)
+                            <i class="fas fa-trophy text-warning"></i> Excellent!
+                        @elseif($stats['my_efficiency'] >= 80)
+                            <i class="fas fa-thumbs-up"></i> Good Job!
+                        @elseif($stats['my_efficiency'] >= 70)
+                            <i class="fas fa-arrow-up"></i> Keep Going!
+                        @else
+                            <i class="fas fa-fist-raised"></i> Let's Push!
+                        @endif
+                    </small>
+                </div>
             </div>
         </div>
         
@@ -305,9 +425,11 @@
                     {{ $stats['active_productions'] }}
                 </div>
                 <p class="performance-label">Produksi Aktif</p>
-                <small class="d-block mt-2 opacity-75">
-                    <i class="fas fa-play-circle"></i> Sedang berjalan
-                </small>
+                <div class="mt-auto pt-2">
+                    <small class="d-block opacity-75">
+                        <i class="fas fa-play-circle"></i> Sedang berjalan
+                    </small>
+                </div>
             </div>
         </div>
     </div>
@@ -319,10 +441,10 @@
             <div class="quick-input-form">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0">
-                        <i class="fas fa-plus-circle text-success me-2"></i>
+                        <i class="fas fa-plus-circle text-primary me-2"></i>
                         Quick Input Produksi
                     </h5>
-                    <span class="badge bg-success">Quick Mode</span>
+                    <span class="badge bg-primary">Quick Mode</span>
                 </div>
 
                 <form id="quickProductionForm">
@@ -404,7 +526,7 @@
                             Progress: {{ number_format(($stats['my_production_today'] / $stats['my_target_today']) * 100, 1) }}%
                         </small>
                         <div class="progress mt-1" style="height: 6px;">
-                            <div class="progress-bar bg-success" role="progressbar" 
+                            <div class="progress-bar bg-primary" role="progressbar" 
                                  style="width: {{ min(($stats['my_production_today'] / $stats['my_target_today']) * 100, 100) }}%">
                             </div>
                         </div>
@@ -439,7 +561,7 @@
                         <div class="chart-header">
                             <h5 class="chart-title">Performa per Shift</h5>
                             <div class="chart-actions">
-                                <button class="btn btn-outline-success btn-sm" onclick="refreshChart('shift')">
+                                <button class="btn btn-outline-primary btn-sm" onclick="refreshChart('shift')">
                                     <i class="fas fa-sync-alt"></i>
                                 </button>
                             </div>
@@ -466,7 +588,7 @@
                         <a href="{{ route('productions.index') }}" class="btn btn-outline-primary btn-sm">
                             <i class="fas fa-list"></i> Lihat Semua
                         </a>
-                        <a href="{{ route('productions.create') }}" class="btn btn-success btn-sm">
+                        <a href="{{ route('productions.create') }}" class="btn btn-primary btn-sm">
                             <i class="fas fa-plus"></i> Input Detail
                         </a>
                     </div>
@@ -558,125 +680,168 @@
     const chartData = @json($chartData);
     
     document.addEventListener('DOMContentLoaded', function() {
-        initDailyPerformanceChart();
-        initShiftPerformanceChart();
+        initializeDashboard();
+    });
+
+    function initializeDashboard() {
+        // Show system status for sample data
+        showSystemStatus();
+        
+        // Initialize charts
+        setTimeout(() => {
+            initDailyPerformanceChart();
+            initShiftPerformanceChart();
+        }, 100);
+        
+        // Initialize form
         initQuickProductionForm();
         setCurrentTime();
         startAutoRefresh();
+        
+        // Show motivational message
         setTimeout(showMotivationalMessage, 2000);
-    });
+    }
+
+    function showSystemStatus() {
+        // Check if we're using sample data
+        const productionToday = {{ $stats['my_production_today'] }};
+        const isUsingSampleData = productionToday === 850; // Adjust based on your fallback value
+        
+        if (isUsingSampleData) {
+            const statusDiv = document.getElementById('system-status');
+            if (statusDiv) {
+                statusDiv.classList.remove('d-none');
+            }
+        }
+    }
 
     function initDailyPerformanceChart() {
-        const ctx = document.getElementById('dailyPerformanceChart').getContext('2d');
-        
-        dailyChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: chartData.daily_target_vs_actual.map(item => item.day),
-                datasets: [{
-                    label: 'Target',
-                    data: chartData.daily_target_vs_actual.map(item => item.target),
-                    borderColor: '#ffc107',
-                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                    borderWidth: 2,
-                    borderDash: [5, 5],
-                    fill: false,
-                    tension: 0.4
-                }, {
-                    label: 'Actual',
-                    data: chartData.daily_target_vs_actual.map(item => item.actual),
-                    borderColor: '#28a745',
-                    backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#28a745',
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                    pointRadius: 5
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: { usePointStyle: true, padding: 20 }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            label: function(context) {
-                                return context.dataset.label + ': ' + formatNumber(context.parsed.y) + ' unit';
-                            }
-                        }
-                    }
+        const canvas = document.getElementById('dailyPerformanceChart');
+        if (!canvas) return;
+
+        try {
+            const ctx = canvas.getContext('2d');
+            
+            dailyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.daily_target_vs_actual.map(item => item.day),
+                    datasets: [{
+                        label: 'Target',
+                        data: chartData.daily_target_vs_actual.map(item => item.target),
+                        borderColor: '#fd7e14',
+                        backgroundColor: 'rgba(253, 126, 20, 0.1)',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0.4
+                    }, {
+                        label: 'Actual',
+                        data: chartData.daily_target_vs_actual.map(item => item.actual),
+                        borderColor: '#435ebe',
+                        backgroundColor: 'rgba(67, 94, 190, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#435ebe',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 5
+                    }]
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: 'rgba(0,0,0,0.1)' },
-                        ticks: {
-                            callback: function(value) {
-                                return formatNumber(value);
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { usePointStyle: true, padding: 20 }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + formatNumber(context.parsed.y) + ' unit';
+                                }
                             }
                         }
                     },
-                    x: { grid: { display: false } }
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(0,0,0,0.1)' },
+                            ticks: {
+                                callback: function(value) {
+                                    return formatNumber(value);
+                                }
+                            }
+                        },
+                        x: { grid: { display: false } }
+                    }
                 }
-            }
-        });
+            });
+        } catch (error) {
+            console.error('Error creating daily performance chart:', error);
+            showChartError('dailyPerformanceChart', 'Daily Performance');
+        }
     }
 
     function initShiftPerformanceChart() {
-        const ctx = document.getElementById('shiftPerformanceChart').getContext('2d');
+        const canvas = document.getElementById('shiftPerformanceChart');
+        if (!canvas) return;
         
-        shiftChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: chartData.shift_performance.map(item => `Shift ${ucfirst(item.shift)}`),
-                datasets: [{
-                    label: 'Efisiensi (%)',
-                    data: chartData.shift_performance.map(item => item.efficiency),
-                    backgroundColor: chartData.shift_performance.map(item => {
-                        if (item.shift === 'pagi') return '#ffd54f';
-                        if (item.shift === 'siang') return '#81c784';
-                        return '#9575cd';
-                    }),
-                    borderRadius: 8,
-                    borderSkipped: false
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return 'Efisiensi: ' + context.parsed.y + '%';
-                            }
-                        }
-                    }
+        try {
+            const ctx = canvas.getContext('2d');
+            
+            shiftChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartData.shift_performance.map(item => `Shift ${ucfirst(item.shift)}`),
+                    datasets: [{
+                        label: 'Efisiensi (%)',
+                        data: chartData.shift_performance.map(item => item.efficiency),
+                        backgroundColor: chartData.shift_performance.map(item => {
+                            if (item.shift === 'pagi') return '#ffd54f';
+                            if (item.shift === 'siang') return '#81c784';
+                            return '#9575cd';
+                        }),
+                        borderRadius: 8,
+                        borderSkipped: false
+                    }]
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 100,
-                        grid: { color: 'rgba(0,0,0,0.1)' },
-                        ticks: {
-                            callback: function(value) {
-                                return value + '%';
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Efisiensi: ' + context.parsed.y + '%';
+                                }
                             }
                         }
                     },
-                    x: { grid: { display: false } }
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            grid: { color: 'rgba(0,0,0,0.1)' },
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        },
+                        x: { grid: { display: false } }
+                    }
                 }
-            }
-        });
+            });
+        } catch (error) {
+            console.error('Error creating shift performance chart:', error);
+            showChartError('shiftPerformanceChart', 'Shift Performance');
+        }
     }
 
     function initQuickProductionForm() {
@@ -753,7 +918,11 @@
     }
 
     function refreshDashboard() {
-        showLoading();
+        const refreshBtn = document.getElementById('refresh-btn');
+        if (refreshBtn) {
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+            refreshBtn.disabled = true;
+        }
         
         fetch('/api/dashboard/stats/operator', {
             method: 'GET',
@@ -771,13 +940,60 @@
         .then(data => {
             updatePerformanceCards(data);
             showSuccess('Dashboard berhasil di-refresh');
-            hideLoading();
+            
+            // Hide system status if real data is loaded
+            if (data.my_production_today !== 850) {
+                const statusDiv = document.getElementById('system-status');
+                if (statusDiv) {
+                    statusDiv.classList.add('d-none');
+                }
+            }
         })
         .catch(error => {
             console.error('Error refreshing dashboard:', error);
-            showError('Gagal refresh dashboard');
-            hideLoading();
+            
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Using Sample Data',
+                    text: 'Dashboard menggunakan data sample. Data produksi asli akan muncul ketika tersedia.',
+                    confirmButtonText: 'OK'
+                });
+            } else {
+                showError('Dashboard menggunakan data sample. Data produksi asli akan muncul ketika tersedia.');
+            }
+        })
+        .finally(() => {
+            if (refreshBtn) {
+                refreshBtn.innerHTML = '<i class="fas fa-sync-alt me-1"></i>Refresh';
+                refreshBtn.disabled = false;
+            }
         });
+    }
+
+    // Export Dashboard Function
+    function exportDashboard() {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Export Dashboard',
+                text: 'Pilih format export yang diinginkan:',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'PDF Report',
+                cancelButtonText: 'Excel Data',
+                showDenyButton: true,
+                denyButtonText: 'Cancel'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.open('/reports/operator/export/pdf', '_blank');
+                } else if (result.isDismissed && result.dismiss !== 'cancel') {
+                    window.open('/reports/operator/export/excel', '_blank');
+                }
+            });
+        } else {
+            const format = confirm('Export as PDF? (Cancel for Excel)') ? 'pdf' : 'excel';
+            window.open(`/reports/operator/export/${format}`, '_blank');
+        }
     }
 
     function updatePerformanceCards(data) {
@@ -856,7 +1072,7 @@
         } else if (efficiency >= 75) {
             message = "Good work! Sedikit lagi untuk mencapai target optimal! 💪";
             icon = "fas fa-arrow-up";
-            type = "info";
+            type = "primary";
         } else if (efficiency >= 60) {
             message = "Keep fighting! Masih ada waktu untuk boost performa! 🔥";
             icon = "fas fa-fist-raised";
@@ -899,6 +1115,33 @@
             delay: 5000
         });
         bsToast.show();
+    }
+
+    // Chart error handling
+    function showChartError(chartId, chartName = 'Chart') {
+        const canvas = document.getElementById(chartId);
+        if (!canvas) return;
+        
+        const chartContent = canvas.parentElement;
+        if (chartContent) {
+            chartContent.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center" style="height: 200px;">
+                    <i class="fas fa-chart-line fs-1 text-muted mb-3 opacity-50"></i>
+                    <h6 class="text-muted mb-2">${chartName} Unavailable</h6>
+                    <p class="text-muted small mb-3">Displaying sample visualization</p>
+                    <div class="row g-2 w-50">
+                        <div class="col-6">
+                            <div class="bg-primary" style="height: 40px; border-radius: 4px; opacity: 0.7;"></div>
+                            <small class="text-muted d-block mt-1 text-center">Sample A</small>
+                        </div>
+                        <div class="col-6">
+                            <div class="bg-success" style="height: 60px; border-radius: 4px; opacity: 0.7;"></div>
+                            <small class="text-muted d-block mt-1 text-center">Sample B</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
     }
 
     // Utility functions

@@ -20,6 +20,102 @@
     box-shadow: 0 4px 25px rgba(111, 66, 193, 0.3);
 }
 
+/* Updated KPI Card Styles - Matching Operator Dashboard */
+.kpi-card {
+    background: linear-gradient(135deg, #6f42c1 0%, #8a63d2 100%);
+    color: white;
+    border-radius: 15px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 8px 25px rgba(111, 66, 193, 0.15);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border: none;
+    position: relative;
+    overflow: hidden;
+    min-height: 140px; /* Fixed minimum height for consistency */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+.kpi-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 30px rgba(111, 66, 193, 0.25);
+}
+
+.kpi-card.success {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    box-shadow: 0 8px 25px rgba(40, 167, 69, 0.15);
+}
+
+.kpi-card.warning {
+    background: linear-gradient(135deg, #fd7e14 0%, #ffc107 100%);
+    box-shadow: 0 8px 25px rgba(253, 126, 20, 0.15);
+}
+
+.kpi-card.danger {
+    background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);
+    box-shadow: 0 8px 25px rgba(220, 53, 69, 0.15);
+}
+
+.kpi-card.info {
+    background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+    box-shadow: 0 8px 25px rgba(23, 162, 184, 0.15);
+}
+
+.kpi-value {
+    font-size: 3rem;
+    font-weight: 800;
+    margin-bottom: 0.5rem;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    line-height: 1;
+    min-height: 3rem; /* Fixed height for value */
+}
+
+.kpi-label {
+    font-size: 1rem;
+    opacity: 0.95;
+    margin: 0;
+    font-weight: 600;
+    min-height: 1.2rem; /* Fixed height for label */
+}
+
+.kpi-icon {
+    position: absolute;
+    right: 1.5rem;
+    top: 1.5rem; /* Fixed position from top instead of center */
+    font-size: 4rem;
+    opacity: 0.2;
+}
+
+/* Progress bars for efficiency */
+.efficiency-progress {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 0.5rem;
+}
+
+.efficiency-fill {
+    height: 100%;
+    background: rgba(255,255,255,0.8);
+    border-radius: 3px;
+    transition: width 1s ease;
+}
+
 .stats-card {
     background: white;
     border-radius: 15px;
@@ -103,7 +199,7 @@
 
 .chart-header {
     display: flex;
-    justify-content: between;
+    justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
     border-bottom: 1px solid #f0f0f0;
@@ -270,21 +366,24 @@
         text-align: center;
     }
     
-    .stats-card {
+    .kpi-card, .stats-card {
         margin-bottom: 1rem;
+        min-height: 120px; /* Smaller minimum height for mobile */
     }
     
     .chart-container {
         padding: 1rem;
     }
     
-    .stats-value {
-        font-size: 2rem;
+    .kpi-value, .stats-value {
+        font-size: 2.5rem;
+        min-height: 2.5rem;
     }
     
-    .stats-icon {
-        font-size: 2rem;
+    .kpi-icon, .stats-icon {
+        font-size: 3rem;
         right: 1rem;
+        top: 1rem;
     }
     
     .secondary-metrics {
@@ -335,75 +434,95 @@
         <span id="status-message">System working with sample data. Real production data will appear once available.</span>
     </div>
 
-    <!-- Main KPI Cards -->
+    <!-- Main KPI Cards - Updated to match Operator style with consistent sizing -->
     <div class="row mb-4">
         <div class="col-lg-3 col-md-6 mb-3">
-            <div class="stats-card">
-                <div class="stats-icon">
+            <div class="kpi-card">
+                <div class="kpi-icon">
                     <i class="fas fa-chart-line"></i>
                 </div>
-                <div class="stats-value" id="total-production-today">
+                <div class="kpi-value" id="total-production-today">
                     {{ number_format($stats['total_production_today']) }}
                 </div>
-                <p class="stats-label">Produksi Hari Ini</p>
-                <small class="text-muted d-block mt-2">
-                    Target: {{ number_format($stats['total_production_today'] * 1.1) }} unit
-                </small>
+                <p class="kpi-label">Produksi Hari Ini</p>
+                <div class="mt-auto pt-2">
+                    <small class="d-block opacity-75">
+                        <i class="fas fa-clock"></i> Update: {{ now()->format('H:i') }}
+                    </small>
+                </div>
             </div>
         </div>
         
         <div class="col-lg-3 col-md-6 mb-3">
-            <div class="stats-card {{ $stats['efficiency_today'] >= 85 ? 'success' : ($stats['efficiency_today'] >= 70 ? 'warning' : 'danger') }}">
-                <div class="stats-icon">
+            <div class="kpi-card {{ $stats['efficiency_today'] >= 85 ? 'success' : ($stats['efficiency_today'] >= 70 ? 'warning' : 'danger') }}">
+                <div class="kpi-icon">
                     <i class="fas fa-percentage"></i>
                 </div>
-                <div class="stats-value" id="efficiency-today">
+                <div class="kpi-value" id="efficiency-today">
                     {{ $stats['efficiency_today'] }}%
                 </div>
-                <p class="stats-label">Efisiensi Hari Ini</p>
-                <small class="text-muted d-block mt-2">
-                    @if($stats['efficiency_today'] >= 85)
-                        <i class="fas fa-arrow-up text-success"></i> Excellent
-                    @elseif($stats['efficiency_today'] >= 70)
-                        <i class="fas fa-arrow-right text-warning"></i> Good
-                    @else
-                        <i class="fas fa-arrow-down text-danger"></i> Needs Improvement
-                    @endif
-                </small>
+                <p class="kpi-label">Efisiensi Hari Ini</p>
+                <div class="efficiency-progress mt-2">
+                    <div class="efficiency-fill" style="width: {{ $stats['efficiency_today'] }}%"></div>
+                </div>
+                <div class="mt-auto pt-1">
+                    <small class="d-block opacity-75">
+                        @if($stats['efficiency_today'] >= 85)
+                            <i class="fas fa-arrow-up"></i> Excellent Performance
+                        @elseif($stats['efficiency_today'] >= 70)
+                            <i class="fas fa-arrow-right"></i> Good Performance
+                        @else
+                            <i class="fas fa-arrow-down"></i> Needs Improvement
+                        @endif
+                    </small>
+                </div>
             </div>
         </div>
         
         <div class="col-lg-3 col-md-6 mb-3">
-            <div class="stats-card {{ $stats['quality_pass_rate'] >= 95 ? 'success' : 'warning' }}">
-                <div class="stats-icon">
+            <div class="kpi-card {{ $stats['quality_pass_rate'] >= 95 ? 'success' : 'warning' }}">
+                <div class="kpi-icon">
                     <i class="fas fa-award"></i>
                 </div>
-                <div class="stats-value" id="quality-pass-rate">
+                <div class="kpi-value" id="quality-pass-rate">
                     {{ $stats['quality_pass_rate'] }}%
                 </div>
-                <p class="stats-label">Pass Rate QC</p>
-                <small class="text-muted d-block mt-2">
-                    Standard: ≥ 95%
-                </small>
+                <p class="kpi-label">Pass Rate QC</p>
+                <div class="efficiency-progress mt-2">
+                    <div class="efficiency-fill" style="width: {{ $stats['quality_pass_rate'] }}%"></div>
+                </div>
+                <div class="mt-auto pt-1">
+                    <small class="d-block opacity-75">
+                        @if($stats['quality_pass_rate'] >= 95)
+                            <i class="fas fa-check-circle"></i> Standard Terpenuhi
+                        @else
+                            <i class="fas fa-exclamation-triangle"></i> Perlu Perbaikan
+                        @endif
+                    </small>
+                </div>
             </div>
         </div>
         
         <div class="col-lg-3 col-md-6 mb-3">
-            <div class="stats-card {{ $stats['low_stock_items'] > 0 ? 'warning' : 'success' }}">
-                <div class="stats-icon">
+            <div class="kpi-card {{ $stats['low_stock_items'] == 0 ? 'success' : ($stats['low_stock_items'] <= 3 ? 'warning' : 'danger') }}">
+                <div class="kpi-icon">
                     <i class="fas fa-boxes"></i>
                 </div>
-                <div class="stats-value" id="low-stock-items">
+                <div class="kpi-value" id="low-stock-items">
                     {{ $stats['low_stock_items'] }}
                 </div>
-                <p class="stats-label">Item Stok Rendah</p>
-                <small class="text-muted d-block mt-2">
-                    @if($stats['low_stock_items'] > 0)
-                        <i class="fas fa-exclamation-triangle text-warning"></i> Perlu perhatian
-                    @else
-                        <i class="fas fa-check text-success"></i> Stok aman
-                    @endif
-                </small>
+                <p class="kpi-label">Item Stok Rendah</p>
+                <div class="mt-auto pt-2">
+                    <small class="d-block opacity-75">
+                        @if($stats['low_stock_items'] == 0)
+                            <i class="fas fa-check"></i> Semua Stok Aman
+                        @elseif($stats['low_stock_items'] <= 3)
+                            <i class="fas fa-eye"></i> Perlu Monitoring
+                        @else
+                            <i class="fas fa-exclamation-triangle"></i> Perlu Tindakan
+                        @endif
+                    </small>
+                </div>
             </div>
         </div>
     </div>
@@ -428,7 +547,7 @@
         </div>
         <div class="metric-card">
             <div class="metric-value text-secondary" id="current-shift">
-                Shift {{ \App\Helpers\ShiftHelper::getCurrentShift() }}
+                Shift {{ \App\Helpers\ShiftHelper::getShiftDisplay() }}
             </div>
             <p class="metric-label">Shift Aktif</p>
         </div>
@@ -935,9 +1054,21 @@ function updateKPICards(data) {
     }
     if (data.efficiency_today !== undefined) {
         animateValue('efficiency-today', 0, data.efficiency_today, 1000, '%');
+        
+        // Update efficiency progress bar
+        const efficiencyFill = document.querySelector('.efficiency-fill');
+        if (efficiencyFill) {
+            efficiencyFill.style.width = data.efficiency_today + '%';
+        }
     }
     if (data.quality_pass_rate !== undefined) {
         animateValue('quality-pass-rate', 0, data.quality_pass_rate, 1000, '%');
+        
+        // Update quality progress bar
+        const qualityFills = document.querySelectorAll('.efficiency-fill');
+        if (qualityFills[1]) {
+            qualityFills[1].style.width = data.quality_pass_rate + '%';
+        }
     }
     if (data.low_stock_items !== undefined) {
         animateValue('low-stock-items', 0, data.low_stock_items, 1000);
@@ -1154,7 +1285,7 @@ function startRealTimeUpdates() {
     // Auto refresh every 60 seconds
     setInterval(() => {
         refreshDashboardData();
-    }, 60000);
+    }, 160000);
 }
 
 function updateCurrentShift() {
@@ -1241,4 +1372,4 @@ window.addEventListener('load', function() {
     console.log('Dashboard loaded in:', loadTime + 'ms');
 });
 </script>
-@endpush
+@endpush 
